@@ -357,3 +357,36 @@ func ReadSSE(r io.Reader, fn func(event string, data []byte) error, ctx context.
 	}
 	return io.ErrUnexpectedEOF
 }
+
+// ---- linked machines (pilothouse link) ----
+
+func (c *Client) LinkCode(ctx context.Context) (api.LinkCode, error) {
+	var v api.LinkCode
+	return v, c.do(ctx, "POST", "/v1/link/code", nil, &v)
+}
+
+func (c *Client) LinkJoin(ctx context.Context, j api.LinkJoin) (api.LinkJoined, error) {
+	var v api.LinkJoined
+	return v, c.do(ctx, "POST", "/v1/link/join", j, &v)
+}
+
+func (c *Client) LinkStatus(ctx context.Context) (api.LinkStatus, error) {
+	var v api.LinkStatus
+	return v, c.do(ctx, "GET", "/v1/link", nil, &v)
+}
+
+// LinkTrust confirms the hub's devices on this machine; it returns how
+// many it trusted.
+func (c *Client) LinkTrust(ctx context.Context, t api.LinkTrust) (int, error) {
+	var v struct {
+		Trusted int `json:"trusted"`
+	}
+	return v.Trusted, c.do(ctx, "POST", "/v1/link/trust", t, &v)
+}
+
+// LinkRemove unlinks a machine (on the hub) or leaves the hub; id is a
+// link id or machine name.
+func (c *Client) LinkRemove(ctx context.Context, id string) (api.LinkPeer, error) {
+	var v api.LinkPeer
+	return v, c.do(ctx, "DELETE", "/v1/link/"+url.PathEscape(id), nil, &v)
+}

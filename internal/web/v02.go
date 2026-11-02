@@ -27,15 +27,16 @@ func (s *Server) routesV02(mux *http.ServeMux, a func(http.HandlerFunc) http.Han
 	// Third-party code the app loads on demand (xterm.js for the terminal).
 	mux.HandleFunc("GET /vendor/", s.serveStatic)
 	// F1: answers, plans (and every decision from 0.2 clients).
-	mux.HandleFunc("POST /api/requests/{id}/respond", a(csrf(s.handleRespond)))
+	f := s.fwd
+	mux.HandleFunc("POST /api/requests/{id}/respond", a(csrf(f(s.handleRespond))))
 	// F2/F3: replies, activity, terminal.
-	mux.HandleFunc("POST /api/sessions/{id}/reply", a(csrf(s.handleReply)))
-	mux.HandleFunc("GET /api/sessions/{id}/activity", a(s.handleActivity))
-	mux.HandleFunc("POST /api/sessions/{id}/terminal/token", a(csrf(s.handleTerminalToken)))
-	mux.HandleFunc("GET /api/sessions/{id}/terminal", a(s.handleTerminalStream))
-	mux.HandleFunc("POST /api/sessions/{id}/terminal/input", a(csrf(s.handleTerminalInput)))
+	mux.HandleFunc("POST /api/sessions/{id}/reply", a(csrf(f(s.handleReply))))
+	mux.HandleFunc("GET /api/sessions/{id}/activity", a(f(s.handleActivity)))
+	mux.HandleFunc("POST /api/sessions/{id}/terminal/token", a(csrf(f(s.handleTerminalToken))))
+	mux.HandleFunc("GET /api/sessions/{id}/terminal", a(f(s.handleTerminalStream)))
+	mux.HandleFunc("POST /api/sessions/{id}/terminal/input", a(csrf(f(s.handleTerminalInput))))
 	mux.HandleFunc("GET /api/desktop", a(s.handleDesktopInfo))
-	mux.HandleFunc("POST /api/sessions/{id}/desktop", a(csrf(s.handleOpenOnDesktop)))
+	mux.HandleFunc("POST /api/sessions/{id}/desktop", a(csrf(f(s.handleOpenOnDesktop))))
 	// F6.
 	mux.HandleFunc("GET /api/insights", a(s.handleInsights))
 	// F5.

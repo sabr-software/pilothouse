@@ -72,6 +72,37 @@ CREATE TABLE IF NOT EXISTS web_passkeys (
 );
 CREATE INDEX IF NOT EXISTS web_passkeys_device ON web_passkeys(device_id);
 `,
+	3: `
+-- Hub side: machines linked to this one (pilothouse link).
+CREATE TABLE IF NOT EXISTS web_links (
+	id             TEXT PRIMARY KEY,
+	machine        TEXT NOT NULL,
+	url            TEXT NOT NULL,
+	peer_token     TEXT NOT NULL, -- sent to the linked machine
+	hub_token_hash BLOB NOT NULL, -- of the token the linked machine sends here
+	created_at     INTEGER NOT NULL
+);
+-- Linked side: the hub this machine reports to (at most one row).
+CREATE TABLE IF NOT EXISTS web_link_hub (
+	id              TEXT PRIMARY KEY,
+	machine         TEXT NOT NULL,
+	url             TEXT NOT NULL,
+	hub_token       TEXT NOT NULL, -- sent to the hub
+	peer_token_hash BLOB NOT NULL, -- of the token the hub sends here
+	devices_version INTEGER NOT NULL DEFAULT 0, -- newest device list applied
+	created_at      INTEGER NOT NULL
+);
+-- Linked side: the hub's devices. A device may act here only while its
+-- public_key equals the trusted_key a person confirmed on this machine.
+CREATE TABLE IF NOT EXISTS web_link_devices (
+	id          TEXT PRIMARY KEY,
+	name        TEXT NOT NULL,
+	public_key  TEXT NOT NULL,
+	trusted_key TEXT NOT NULL DEFAULT '',
+	revoked_at  INTEGER,
+	updated_at  INTEGER NOT NULL
+);
+`,
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {
@@ -172,6 +203,12 @@ func fromMS(v sql.NullInt64) *time.Time {
 type deviceRow struct {
 	api.Device
 	tokenHash []byte
+	// via is set for a device acting through a link: the hub's machine
+	// name. Such a device has no cookie here; untrusted means no person
+	// confirmed its current key on this machine, so it may read but not
+	// act (see linkstore.go).
+	via       string
+	untrusted bool
 }
 
 const deviceCols = `d.id, d.name, d.public_key, d.token_hash, d.created_at, d.last_seen_at, d.revoked_at,
@@ -187,6 +224,7 @@ func scanDevice(sc interface{ Scan(...any) error }) (*deviceRow, error) {
 	}
 	d.CreatedAt = time.UnixMilli(created).UTC()
 	d.LastSeenAt = fromMS(seen)
+	d.Fingerprint = keyFingerprint(d.PublicKey)
 	d.RevokedAt = fromMS(revoked)
 	return &d, nil
 }
@@ -231,17 +269,43 @@ func (s *Server) createCode(ctx context.Context, kind string, ttl time.Duration)
 	return code, exp, err
 }
 
-// consumeCode marks a code used, atomically; it reports false if the code
-// is unknown, used or expired.
-func (s *Server) consumeCode(ctx context.Context, code string) (kind string, ok bool, err error) {
+// consumeCode marks a code of one of kinds used, atomically; it reports
+// false if the code is unknown, of another kind, used or expired. A link
+// code can't pair a device, and a pairing code can't link a machine.
+func (s *Server) consumeCode(ctx context.Context, code string, kinds ...string) (kind string, ok bool, err error) {
 	now := ms(s.now())
-	err = s.d.DB.QueryRowContext(ctx,
-		`UPDATE web_pair_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL AND expires_at > ? RETURNING kind`,
-		now, hashSecret(normalizeCode(code)), now).Scan(&kind)
+	if len(kinds) == 0 {
+		kinds = []string{"pair", "login"}
+	}
+	q := `UPDATE web_pair_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL AND expires_at > ? AND kind IN (?` +
+		strings.Repeat(", ?", len(kinds)-1) + `) RETURNING kind`
+	args := []any{now, hashSecret(normalizeCode(code)), now}
+	for _, k := range kinds {
+		args = append(args, k)
+	}
+	err = s.d.DB.QueryRowContext(ctx, q, args...).Scan(&kind)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
 	return kind, err == nil, err
+}
+
+// codeValid reports whether an unused, unexpired code of one of kinds
+// exists, without using it up.
+func (s *Server) codeValid(ctx context.Context, code string, kinds ...string) (bool, error) {
+	now := ms(s.now())
+	q := `SELECT 1 FROM web_pair_codes WHERE code_hash = ? AND used_at IS NULL AND expires_at > ? AND kind IN (?` +
+		strings.Repeat(", ?", len(kinds)-1) + `)`
+	args := []any{hashSecret(normalizeCode(code)), now}
+	for _, k := range kinds {
+		args = append(args, k)
+	}
+	var one int
+	err := s.d.DB.QueryRowContext(ctx, q, args...).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // useNonce records a decision nonce for a device; false means replay.

@@ -8,6 +8,7 @@
 
 import { h, icon, ago, repoName, stateLabel, agentInitials, agentClass, agentName, money } from '../dom.js';
 import { link } from '../ui.js';
+import { store, multiMachine, machineInfo } from '../api.js';
 
 export function section(title, count, content, cls = '', end = null) {
   return h('section', { class: 'section' },
@@ -45,4 +46,14 @@ export function sessionRow(s) {
       s.unseen ? h('span', { class: 'unseen', title: 'New since you last looked' }, h('span', { class: 'sr-only' }, 'New')) : null,
       !s.unseen && s.usage && s.usage.cost_usd >= 0.01 ? h('span', { title: 'Estimated cost so far' }, money(s.usage.cost_usd)) : null),
     icon('chev', 'sm', 'chev'));
+}
+
+/**
+ * A small machine label for a session on another machine, when several
+ * are in view (this machine's sessions stay unlabelled).
+ */
+export function machineTag(s, hideIf = '') {
+  if (!multiMachine() || !s || !s.machine || s.machine === hideIf || s.machine === store.machine) return null;
+  const m = machineInfo(s.machine);
+  return h('span', { class: 'mtag' + (m && !m.online ? ' off' : ''), title: m && !m.online ? `${s.machine} is offline` : `On ${s.machine}` }, s.machine);
 }

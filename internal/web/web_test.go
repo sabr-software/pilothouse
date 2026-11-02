@@ -553,7 +553,7 @@ func TestSecurityHeadersAndStatic(t *testing.T) {
 
 func TestLocalRoutesFailClosedWithoutGuard(t *testing.T) {
 	e := newEnv(t, func(d *Deps) { d.LocalGuard = nil })
-	for _, p := range []string{"/v1/pair", "/v1/login-link"} {
+	for _, p := range []string{"/v1/pair", "/v1/login-link", "/v1/link/code"} {
 		if w := e.localDo("POST", p); w.Code != 500 {
 			t.Errorf("%s without guard: %d", p, w.Code)
 		}
@@ -566,8 +566,8 @@ func TestLocalRoutesFailClosedWithoutGuard(t *testing.T) {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { writeErr(w, 403, "agent_caller", "no") })
 		}
 	})
-	if guarded != 4 {
-		t.Fatalf("guard applied to %d routes, want 4", guarded)
+	if want := len(e2.srv.LocalRoutes()); guarded != want || want != 9 {
+		t.Fatalf("guard applied to %d of %d routes (want 9: pairing, devices and linking)", guarded, want)
 	}
 	if w := e2.localDo("POST", "/v1/pair"); w.Code != 403 {
 		t.Fatalf("guarded pair: %d", w.Code)

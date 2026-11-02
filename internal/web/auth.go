@@ -31,6 +31,10 @@ const (
 // auth requires a valid device cookie and puts the device in the context.
 func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if linkedCall(r) && deviceOf(r) != nil { // set by handleLinked
+			next(w, r)
+			return
+		}
 		d := s.authenticate(r)
 		if d == nil {
 			writeErr(w, http.StatusUnauthorized, "unauthorized", "this device is not paired (run `pilothouse pair`)")
@@ -344,6 +348,11 @@ func (s *Server) LocalRoutes() map[string]http.Handler {
 		"POST /v1/login-link":     http.HandlerFunc(s.handleLocalLogin),
 		"GET /v1/devices":         http.HandlerFunc(s.handleLocalDevices),
 		"DELETE /v1/devices/{id}": http.HandlerFunc(s.handleLocalRevoke),
+		"POST /v1/link/code":      http.HandlerFunc(s.handleLocalLinkCode),
+		"POST /v1/link/join":      http.HandlerFunc(s.handleLocalLinkJoin),
+		"GET /v1/link":            http.HandlerFunc(s.handleLocalLinkStatus),
+		"POST /v1/link/trust":     http.HandlerFunc(s.handleLocalLinkTrust),
+		"DELETE /v1/link/{id}":    http.HandlerFunc(s.handleLocalLinkRemove),
 	}
 }
 

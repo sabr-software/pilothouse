@@ -653,7 +653,7 @@ svg.spark { display: block; width: 100%; height: 28px; margin-top: 8px; overflow
 .thisturn svg.ic { width: 13px; height: 13px; stroke-width: 2.6; margin-top: 2.5px; flex: none; color: var(--brand-text); }
 .thisturn b { font-weight: 650; color: var(--text); }
 .thisturn .mono { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
-.thisturn .muted, .thisturn .muted svg.ic { color: var(--text-3); }
+.thisturn .muted, .thisturn .muted svg.ic { color: var(--text-2); } /* on tinted cards --text-3 falls just under 4.5:1 */
 .thisturn .warn, .thisturn .warn svg.ic, .thisturn .warn b { color: var(--warn-text); }
 .thisturn .bad, .thisturn .bad svg.ic, .thisturn .bad b { color: var(--deny-text); }
 .ledger-dec .deny-form { margin-top: 12px; }
@@ -709,3 +709,24 @@ svg.spark { display: block; width: 100%; height: 28px; margin-top: 8px; overflow
 .desk-tool { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
 .task-desk { padding: 0 16px 16px; }
 .task-desk .desk-btn { gap: 6px; }
+
+/* ---------- Machines (pilothouse link) ---------- */
+.mtag { flex: none; padding: 1px 6px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); font: 600 11px/1.5 var(--mono); letter-spacing: 0.01em; white-space: nowrap; }
+.mtag.off { color: var(--text-3); border-style: dashed; }
+.side-session .txt b .mtag { margin-left: 6px; vertical-align: 1px; }
+.qhead .mtag { margin-left: 2px; }
+.mchips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 var(--s3); }
+.mchips[hidden] { display: none; }
+.mchip { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 4px 13px; border-radius: var(--r-pill); border: 1px solid var(--border); background: var(--surface); color: var(--text-2); font: 600 13px/1 var(--font); cursor: pointer; transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease); }
+.mchip:hover { border-color: var(--border-strong); color: var(--text); }
+.mchip[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--bg); }
+.mchip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--allow); }
+.mchip.off .dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--text-3); }
+.mchip.off { color: var(--text-3); }
+.moff { font-size: var(--fs-xs); color: var(--text-3); }
+.setting.machine.off b { color: var(--text-2); }
+
+/* The device key's fingerprint (Settings → This device), compared with what linked computers show */
+.key-fp { display: block; margin-top: 2px; }
+.key-fp code { font: 600 12px/1.4 var(--mono); letter-spacing: 0.02em; color: var(--text-2); }
+.dwho .mtag, .card .mtag { margin-left: 6px; vertical-align: 1px; }

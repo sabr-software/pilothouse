@@ -254,6 +254,9 @@ func (d *Daemon) run(parent context.Context) (err error) {
 		go func() { serveErr <- serve(webSrv, webLn) }()
 	}
 	d.startLoops()
+	if webSrv != nil {
+		d.web.StartLinks(d.ctx) // machines linked to this one (pilothouse link)
+	}
 	d.log.Info("pilothouse daemon started", "socket", paths.Socket(), "web", d.webURL, "pid", os.Getpid())
 	if d.opts.OnReady != nil {
 		d.opts.OnReady(d)
@@ -357,7 +360,14 @@ func (d *Daemon) initWeb() {
 		}
 		// notify adds component=notify itself; Telegram lives in its own
 		// package, so the daemon adds its channel.
-		d.notifier = notify.New(d.cfg, p, d.log, telegramChannel{d.tg})
+		chans := []notify.Channel{telegramChannel{d.tg}}
+		if d.web != nil {
+			chans = append(chans, d.web.LinkChannel()) // to this machine's hub, if linked
+		}
+		d.notifier = notify.New(d.cfg, p, d.log, chans...)
+	}
+	if d.web != nil {
+		d.web.SetNotifier(d.notifier) // delivers what linked machines forward
 	}
 }
 

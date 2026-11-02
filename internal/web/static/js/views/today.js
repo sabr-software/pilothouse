@@ -15,7 +15,8 @@
 // them is not "looking", so the session's catch-up stays put).
 
 import { h, svg, icon, toMs, ago, clock, repoName, fill, add, sync, money, agentClass, agentName, basename, requestVerb, plural } from '../dom.js';
-import { store, api, changed } from '../api.js';
+import { store, api, changed, multiMachine, machineInfo } from '../api.js';
+import { machineTag } from './rows.js';
 import { requestCard, pruneCards, settling } from '../card.js';
 import { link, go, isWide, skeleton, emptyState } from '../ui.js';
 import { markdownTitle } from '../markdown.js';
@@ -31,6 +32,7 @@ let endedOpen = false;
 
 const receipts = new Map(); // session id → {key, data, loading}
 const proofs = new Map(); // request id → proof element owned here
+const MACHINE_KEY = 'ph.machine'; // the machine Today is narrowed to ('' = all)
 
 export function todayView() {
   const root = h('div', { class: 'view log' });
@@ -38,9 +40,12 @@ export function todayView() {
   const band = h('div', { class: 'lband' }, counts, bandArt());
   const body = h('div', { class: 'ledger' });
   const foot = h('div', { class: 'lfoot' });
+  const chips = h('div', { class: 'mchips', role: 'group', 'aria-label': 'Machines', hidden: true });
+  let only = '';
+  try { only = localStorage.getItem(MACHINE_KEY) || ''; } catch { /* private mode */ }
   const day = new Date().toLocaleDateString([], { weekday: 'long' });
   // The top bar shows the title; this is the page's heading for screen readers.
-  add(root, h('h1', { class: 'page-title sr-only' }, `${day}’s log`), band, body, foot);
+  add(root, h('h1', { class: 'page-title sr-only' }, `${day}’s log`), band, chips, body, foot);
   let today = null; // {cost, auto} from insights
   // Cached so a re-render never moves the open decision (it would lose
   // focus mid-typing a deny reason): sections and decision rows are reused.
@@ -54,12 +59,15 @@ export function todayView() {
       return;
     }
     const wide = isWide();
-    const reqs = [...store.requests.values()];
+    renderChips();
+    // Narrowed to one machine (several are linked): only its sessions.
+    const mine = (s) => !only || !s || s.machine === only;
+    const reqs = [...store.requests.values()].filter((r) => mine(store.sessions.get(r.session_id)));
     const open = reqs.filter((r) => r.status === 'open' || settling.has(r.id))
       .sort((a, b) => toMs(a.created_at) - toMs(b.created_at));
     const stepped = reqs.filter((r) => r.status === 'stepped_aside')
       .sort((a, b) => toMs(b.created_at) - toMs(a.created_at));
-    const live = [...store.sessions.values()].filter((s) => s.state !== 'exited');
+    const live = [...store.sessions.values()].filter((s) => s.state !== 'exited' && mine(s));
     const asking = new Set([...open, ...stepped].map((r) => r.session_id));
     const desk = live.filter((s) => s.state === 'blocked' && !asking.has(s.id));
     const working = live.filter((s) => WORKING.has(s.state)).sort((a, b) => toMs(a.updated_at) - toMs(b.updated_at));
@@ -97,7 +105,7 @@ export function todayView() {
     if (idle.length) groups.push(foldGroup('idle', idle, `${idle.length} idle`, 'nothing new since you looked'));
     // Sessions that ended today, folded: the rest of what the Sessions tab showed.
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
-    const ended = [...store.sessions.values()].filter((s) => s.state === 'exited' && toMs(s.exited_at || s.updated_at) >= dayStart.getTime())
+    const ended = [...store.sessions.values()].filter((s) => s.state === 'exited' && mine(s) && toMs(s.exited_at || s.updated_at) >= dayStart.getTime())
       .sort((a, b) => toMs(b.exited_at || b.updated_at) - toMs(a.exited_at || a.updated_at));
     if (ended.length) groups.push(foldGroup('ended', ended, `${ended.length} ended today`, 'closed or finished for good'));
     if (!live.length && !open.length) groups.push(sections.none || (sections.none = noAgents()));
@@ -122,6 +130,28 @@ export function todayView() {
     tickClocks(root);
   }
 
+  /** Machine chips (several machines linked): All, then each machine. */
+  function renderChips() {
+    const multi = multiMachine();
+    chips.hidden = !multi;
+    if (!multi) { only = ''; fill(chips); return; }
+    if (only && !machineInfo(only)) only = '';
+    const pick = (name) => {
+      only = name;
+      try { localStorage.setItem(MACHINE_KEY, name); } catch { /* private mode */ }
+      render();
+    };
+    const chip = (name, label, m) => h('button', {
+      class: 'mchip' + (m && !m.online ? ' off' : ''), type: 'button', 'aria-pressed': String(only === name),
+      title: m && !m.online ? (m.error || `${label} is offline`) : null, onclick: () => pick(name),
+    }, m ? h('span', { class: 'dot', 'aria-hidden': 'true' }) : null, label, m && !m.online ? h('span', { class: 'sr-only' }, ' (offline)') : null);
+    const off = store.machines.filter((m) => !m.online);
+    fill(chips, chip('', 'All machines', null), store.machines.map((m) => chip(m.name, m.name, m)),
+      off.length ? h('span', { class: 'moff' }, `${off.map((m) => m.name).join(', ')} offline · its sessions may be out of date`) : null);
+  }
+  /** The machine label on a row, unless Today is narrowed to that machine. */
+  const mt = (s) => machineTag(s, only);
+
   // ---- rows ----
 
   function needRow(r, wide) {
@@ -131,7 +161,7 @@ export function todayView() {
     const head = [
       mark('need', kind === 'question' ? 'question' : kind === 'plan' ? 'plan' : 'clock', r.agent),
       h('span', { class: 'lb' },
-        h('span', { class: 'l1' }, h('b', null, repoName(s, r)), h('em', null, askTitle(r)),
+        h('span', { class: 'l1' }, h('b', null, repoName(s, r)), mt(s), h('em', null, askTitle(r)),
           kind === 'permission' && !wide ? icon('chevDown', 'sm', 'cv') : icon('chev', 'sm', 'cv')),
         h('span', { class: 'l2' }, needDetail(r, s, isOpen))),
     ];
@@ -187,7 +217,7 @@ export function todayView() {
       link('/r/' + r.id, { class: 'lrow', 'data-nav': '' },
         mark('desk', 'monitor', r.agent),
         h('span', { class: 'lb' },
-          h('span', { class: 'l1' }, h('b', null, repoName(s, r)), h('em', null, 'Asked in its terminal'),
+          h('span', { class: 'l1' }, h('b', null, repoName(s, r)), mt(s), h('em', null, 'Asked in its terminal'),
             h('time', { 'data-ago': r.created_at }, ago(r.created_at)), icon('chev', 'sm', 'cv')),
           h('span', { class: 'l2 mono' }, r.command || r.summary || r.tool))));
   }
@@ -198,7 +228,7 @@ export function todayView() {
       link('/s/' + s.id, { class: 'lrow', 'data-nav': '', 'data-session': s.id },
         mark('desk', 'monitor', s.agent),
         h('span', { class: 'lb' },
-          h('span', { class: 'l1' }, h('b', null, repoName(s)), h('em', null, what),
+          h('span', { class: 'l1' }, h('b', null, repoName(s)), mt(s), h('em', null, what),
             h('time', { 'data-ago': s.updated_at }, ago(s.updated_at)), icon('chev', 'sm', 'cv')),
           h('span', { class: 'l2' }, 'answer it on your computer'))));
   }
@@ -211,7 +241,7 @@ export function todayView() {
       link('/s/' + s.id, { class: 'lrow', 'data-nav': '', 'data-session': s.id },
         mark(s.state === 'unknown' ? 'quiet' : 'work', null, s.agent),
         h('span', { class: 'lb' },
-          h('span', { class: 'l1' }, h('b', null, repoName(s)), h('em', null, st.label),
+          h('span', { class: 'l1' }, h('b', null, repoName(s)), mt(s), h('em', null, st.label),
             h('time', { class: 'el', 'data-since': s.updated_at, 'aria-label': 'on this step for' }, elapsed(s.updated_at))),
           h('span', { class: 'l2' + (st.mono ? ' mono' : '') }, st.raw || s.branch || agentName(s.agent)))));
   }
@@ -223,7 +253,7 @@ export function todayView() {
       link('/s/' + s.id, { class: 'lrow' + (s.unseen ? ' unread' : ''), 'data-nav': '', 'data-session': s.id },
         mark(failed ? 'bad' : 'fin', failed ? 'alert' : 'check', s.agent),
         h('span', { class: 'lb' },
-          h('span', { class: 'l1' }, h('b', null, repoName(s)),
+          h('span', { class: 'l1' }, h('b', null, repoName(s)), mt(s),
             s.unseen ? h('span', { class: 'new', title: 'New since you last looked' }, h('span', { class: 'sr-only' }, 'New')) : null,
             h('em', null, oneLine(said)),
             h('time', { datetime: s.updated_at, title: clock(s.updated_at), 'aria-label': 'at ' + clock(s.updated_at) }, clock(s.updated_at).replace(/\s?[AP]\.?M\.?$/i, '')),
@@ -237,7 +267,7 @@ export function todayView() {
     const rows = h('div', { class: 'idlelist', hidden: !open },
       list.map((s) => link('/s/' + s.id, { class: 'irow', 'data-session': s.id },
         h('span', { class: 'ag ' + agentClass(s.agent), 'aria-hidden': 'true' }),
-        h('b', null, repoName(s)), s.branch ? h('span', { class: 'br' }, s.branch) : null,
+        h('b', null, repoName(s)), mt(s), s.branch ? h('span', { class: 'br' }, s.branch) : null,
         h('span', { class: 'st' }, s.state === 'starting' ? 'Ready' : ''),
         h('time', { 'data-ago': kind === 'ended' ? (s.exited_at || s.updated_at) : s.updated_at }, ago(kind === 'ended' ? (s.exited_at || s.updated_at) : s.updated_at)))));
     const btn = h('button', {

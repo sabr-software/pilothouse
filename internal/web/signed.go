@@ -98,6 +98,10 @@ func (s *Server) readSigned(w http.ResponseWriter, r *http.Request, action, targ
 // device's key, and spends the nonce. It writes the error and returns
 // false on failure. Shared by v1 decisions and v2 actions.
 func (s *Server) verifyDeviceSig(w http.ResponseWriter, r *http.Request, d *deviceRow, canonical, sigB64 string, ts int64, nonce string) bool {
+	if d.untrusted { // over a link, with a key no one confirmed on this machine
+		writeErr(w, http.StatusForbidden, "untrusted_device", s.untrustedMsg())
+		return false
+	}
 	skew := s.now().Sub(time.UnixMilli(ts))
 	if skew > MaxClockSkew || skew < -MaxClockSkew {
 		writeErr(w, http.StatusForbidden, "stale_signature", "signature timestamp is too far from the computer's clock — check the time on this device")

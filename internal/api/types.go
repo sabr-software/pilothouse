@@ -208,9 +208,10 @@ const (
 	EventPresenceChanged EventType = "presence.changed"
 	EventDeviceChanged   EventType = "device.changed"
 	EventTaskUpdated     EventType = "task.updated"
-	EventSessionReply    EventType = "session.reply"  // a person sent a follow-up prompt or interrupt (Data: ReplyRecord)
-	EventPolicyChanged   EventType = "policy.changed" // rules were added, removed, enabled or disabled (Data: RuleChange)
-	EventHook            EventType = "hook"           // raw normalized hook, kept for `pilothouse explain`
+	EventSessionReply    EventType = "session.reply"   // a person sent a follow-up prompt or interrupt (Data: ReplyRecord)
+	EventPolicyChanged   EventType = "policy.changed"  // rules were added, removed, enabled or disabled (Data: RuleChange)
+	EventHook            EventType = "hook"            // raw normalized hook, kept for `pilothouse explain`
+	EventMachineChanged  EventType = "machine.changed" // a linked machine came online, went offline or was linked or removed (Data: MachineInfo)
 )
 
 // Event is one entry in the append-only log. Seq is strictly increasing.
@@ -259,6 +260,9 @@ type Snapshot struct {
 	Requests []Request `json:"requests"` // open requests plus the last 50 closed
 	Presence Presence  `json:"presence"`
 	Tasks    []Task    `json:"tasks,omitempty"`
+	// Machines lists this machine and the machines linked to it, when any
+	// are (see `pilothouse link`). Sessions carry their machine's name.
+	Machines []MachineInfo `json:"machines,omitempty"`
 }
 
 // StreamControl is sent on the event stream instead of an Event when the
@@ -269,14 +273,17 @@ type StreamControl struct {
 
 // Device is a paired phone or browser.
 type Device struct {
-	ID         string     `json:"id"`
-	Name       string     `json:"name"`
-	PublicKey  string     `json:"public_key"` // base64url SPKI, ECDSA P-256
-	PushOK     bool       `json:"push_ok"`    // has a Web Push subscription
-	Passkey    bool       `json:"passkey"`    // has a passkey that can restore its signing key
-	CreatedAt  time.Time  `json:"created_at"`
-	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
-	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	PublicKey string `json:"public_key"` // base64url SPKI, ECDSA P-256
+	// Fingerprint is a short form of PublicKey for comparing by eye, as
+	// `pilothouse link trust` shows it on linked machines.
+	Fingerprint string     `json:"fingerprint,omitempty"`
+	PushOK      bool       `json:"push_ok"` // has a Web Push subscription
+	Passkey     bool       `json:"passkey"` // has a passkey that can restore its signing key
+	CreatedAt   time.Time  `json:"created_at"`
+	LastSeenAt  *time.Time `json:"last_seen_at,omitempty"`
+	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
 }
 
 // TaskStatus is the lifecycle of an orchestrated task.

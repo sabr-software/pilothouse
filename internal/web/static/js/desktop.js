@@ -7,7 +7,7 @@
 //        → {target, label, where?, reused?, machine}
 
 import { h, icon, fill } from './dom.js';
-import { api, store } from './api.js';
+import { api, store, onOtherMachine, machineInfo } from './api.js';
 import { toast } from './ui.js';
 import { postAction, actionError, spinner } from './views/session.js';
 
@@ -38,13 +38,13 @@ function shortMachine(m) {
   return String(m).replace(/\.(local|lan|home|attlocal\.net|[a-z0-9-]+\.ts\.net)$/i, '');
 }
 
-/** True when s can be opened on the computer from here. */
+/** True when s can be opened on the computer it runs on. */
 function openable(s, d) {
-  if (!s || !d || !d.target) return false;
-  if (s.state === 'exited' || s.mode !== 'wrapped' || !(s.caps && s.caps.watch)) return false;
-  // A session reported by another computer opens there, not here. Both
-  // names come from the daemon, so they match for its own sessions.
-  return !s.machine || !d.machine || s.machine === d.machine;
+  if (!s || s.state === 'exited' || s.mode !== 'wrapped' || !(s.caps && s.caps.watch)) return false;
+  // A linked machine's session opens on that machine (the hub forwards
+  // the signed request); whether herdr runs there, it answers itself.
+  if (onOtherMachine(s)) { const m = machineInfo(s.machine); return !!(m && m.online); }
+  return !!(d && d.target);
 }
 
 /**
@@ -64,6 +64,12 @@ export function desktopButton(sessionId, { variant = 'button' } = {}) {
     const ok = openable(s, d);
     btn.hidden = !ok;
     if (!ok || busy) return;
+    if (onOtherMachine(s)) {
+      btn.title = `Open this session on ${s.machine}, in herdr or a terminal window there`;
+      label.textContent = variant === 'tool' ? shortMachine(s.machine) : `Open on ${shortMachine(s.machine)}`;
+      fill(btn, icon('monitor', 'sm'), label);
+      return;
+    }
     const where = d.machine ? ` on ${d.machine}` : '';
     btn.title = `Open this session in ${d.label}${where}`; // the full name, for hover
     label.textContent = variant === 'tool' ? d.label : `Open in ${d.label}`;

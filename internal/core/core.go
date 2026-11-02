@@ -69,6 +69,11 @@ type Notification struct {
 	// Remote is true when the person is away: send to devices (push, ntfy,
 	// webhooks). False: desktop notification only.
 	Remote bool `json:"remote"`
+	// Linked is true for a notification forwarded from a linked machine
+	// (`pilothouse link`). Channels then offer no one-tap answers: only a
+	// paired device can answer, and the linked machine checks its
+	// signature itself.
+	Linked bool `json:"linked,omitempty"`
 }
 
 // Notifier delivers notifications. Implementations must not block for

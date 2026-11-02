@@ -6,7 +6,7 @@ import { askTitle } from './views/today.js';
 import { store } from './api.js';
 import { panes, link, isWide } from './ui.js';
 import { requestCard, pruneCards, settling } from './card.js';
-import { avatar, sessionLine } from './views/rows.js';
+import { avatar, sessionLine, machineTag } from './views/rows.js';
 
 const qcards = new Map(); // request id → cached pane card (keeps a typed deny reason)
 
@@ -21,7 +21,7 @@ function queueCard(r) {
     c = { el: h('section', { class: 'qcard' + (perm ? ' perm' : ''), 'data-key': r.id }, head, body), head, body };
     qcards.set(r.id, c);
   }
-  fill(c.head, h('span', { class: 'ag ' + agentClass(r.agent), 'aria-hidden': 'true' }), h('b', null, repoName(s, r)),
+  fill(c.head, h('span', { class: 'ag ' + agentClass(r.agent), 'aria-hidden': 'true' }), h('b', null, repoName(s, r)), machineTag(s),
     s && s.branch ? h('span', { class: 'br' }, s.branch) : null, h('time', null, ago(r.created_at)));
   // Questions and plans keep their full card here: number keys pick options,
   // d asks for changes (palette.js).
@@ -47,7 +47,7 @@ export function renderPanes(path) {
   const current = (/^\/s\/([\w-]+)/.exec(path || '') || [])[1];
   fill(p.sessions, [...live, ...ended].map((s) => link('/s/' + s.id, {
     class: 'side-session', 'aria-current': s.id === current ? 'page' : null, title: `${repoName(s)} — ${stateLabel(s)}`,
-  }, avatar(s), h('span', { class: 'txt' }, h('b', null, repoName(s)), h('small', null, sessionLine(s))))),
+  }, avatar(s), h('span', { class: 'txt' }, h('b', null, repoName(s), machineTag(s)), h('small', null, sessionLine(s))))),
   sessions.length ? null : h('p', { class: 'quiet' }, 'No sessions yet'));
 
   const open = [...store.requests.values()]

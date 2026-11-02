@@ -10,7 +10,7 @@ import { store, api } from '../api.js';
 import { requestCard, pruneCards } from '../card.js';
 import { link, toast, skeleton, emptyState, setTopTitle } from '../ui.js';
 import { markdownTitle } from '../markdown.js';
-import { avatar, section, sessionLine } from './rows.js';
+import { avatar, section, sessionLine, machineTag } from './rows.js';
 import { askTitle } from './today.js';
 
 function decider(by) {
@@ -125,6 +125,7 @@ export function requestView(id) {
           h('b', null, repoName(s, r)),
           s && s.branch ? h('span', null, ' · ' + s.branch) : null,
           h('span', null, ' · ' + agent),
+          machineTag(s),
           h('span', { class: 'when' }, ' · asked ', h('time', { datetime: r.created_at }, agoLong(r.created_at)))));
     fill(answerEl, facts.length ? section('Answer', 0, h('div', { class: 'group' },
       h('dl', { class: 'kv answer-kv' }, facts.flatMap(([kk, v]) => [h('dt', null, kk), h('dd', null, v)])))) : null);

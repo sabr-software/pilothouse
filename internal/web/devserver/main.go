@@ -45,6 +45,7 @@ import (
 func main() {
 	addr := flag.String("addr", "127.0.0.1:7600", "listen address")
 	live := flag.Bool("live", false, "keep agents busy and raise new requests")
+	linked := flag.Bool("linked", false, "pretend a second computer is linked (pilothouse link)")
 	legacyDemo := flag.Bool("demo", false, "same as -live")
 	admin := flag.String("admin", "", "loopback address for the local admin routes (login links, pairing codes)")
 	quietLog := flag.Bool("quiet", false, "log warnings only")
@@ -61,7 +62,7 @@ func main() {
 	must(err)
 	defer db.Close()
 
-	dc := demo.New(demo.Options{Machine: "studio", Quiet: !*live && !*legacyDemo})
+	dc := demo.New(demo.Options{Machine: "studio", Quiet: !*live && !*legacyDemo, Linked: *linked})
 
 	cfg := config.Default()
 	cfg.Web.Addr = *addr

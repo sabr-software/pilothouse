@@ -233,6 +233,20 @@ yours. They match shell commands one command at a time, so allowing
 is a signed action, and a device can't add `when:` expressions or touch
 built-in, hand-written or repo rules.
 
+### Several machines
+
+```sh
+pilothouse link add                       # on the hub (the machine your phone is paired with)
+pilothouse link join https://studio.tailnet.ts.net XXXX-XXXX-XXXX   # on each other machine
+```
+
+The hub's app then shows every machine's sessions together, labelled, with
+chips to narrow Today to one machine. Answers, replies and the live terminal
+go to the machine that runs the agent, which checks the device's signature
+itself: you confirm the hub's devices on each machine when you link it, so the
+hub can't answer for you. Rules, tasks and insights stay per machine. See
+[docs/LINK.md](docs/LINK.md).
+
 ### Replies and the live terminal
 
 ```sh

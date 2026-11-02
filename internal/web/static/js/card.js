@@ -35,7 +35,7 @@
 // up to date) and a sticky answer bar (Hold to allow once for permissions).
 
 import { h, svg, icon, agentBadge, agentClass, agentName, repoName, ago, toMs, requestVerb, grantPrefix, vibrate, relPath, fill, add, richText, uid } from './dom.js';
-import { store, api, changed, signed } from './api.js';
+import { store, api, changed, signed, onOtherMachine } from './api.js';
 import { toast, openSheet, go, link, skeleton } from './ui.js';
 import { diffView } from './diff.js';
 import { closeRequestNotifications } from './push.js';
@@ -440,6 +440,9 @@ function build(req, opts) {
     controls.push(reason, denyConfirm);
     ruleBtn = h('button', { class: 'link-btn quiet-link', type: 'button' }, icon('wand', 'sm'), 'Make it a rule…');
     ruleBtn.addEventListener('click', () => openRuleSheet(current));
+    // Rules belong to each machine: this app edits this machine's, so a
+    // linked machine's request can't become one here.
+    ruleBtn.hidden = onOtherMachine(store.sessions.get(req.session_id));
     allowBtn.addEventListener('click', () => allowOnce());
     sessionBtn.addEventListener('click', () => allowSession());
     denyBtn.addEventListener('click', () => openDeny());
@@ -720,7 +723,9 @@ function build(req, opts) {
     const wasOpen = current.status === 'open';
     current = r;
     const s = store.sessions.get(r.session_id);
-    fill(els.where, repoName(s, r), s && s.branch ? h('span', { class: 'branch' }, ' · ' + s.branch) : null);
+    // The same repository often exists on several linked machines: say which.
+    fill(els.where, repoName(s, r), s && s.branch ? h('span', { class: 'branch' }, ' · ' + s.branch) : null,
+      onOtherMachine(s) ? h('span', { class: 'mtag', title: `On ${s.machine}` }, s.machine) : null);
     els.context.hidden = !r.context;
     if (r.context) {
       fill(els.context, h('span', { class: 'sr-only' }, agentName(r.agent) + ' says: '), '“' + r.context + '”');
@@ -754,7 +759,7 @@ function build(req, opts) {
     }
     metas.push(els.left);
     fill(els.meta, ...metas);
-    if (ruleBtn) ruleBtn.hidden = r.status !== 'open' && !opts.keep;
+    if (ruleBtn) ruleBtn.hidden = (r.status !== 'open' && !opts.keep) || onOtherMachine(store.sessions.get(r.session_id));
 
     const actionable = r.status === 'open';
     const pending = inflight.get(r.id);

@@ -57,13 +57,14 @@ function build() {
 }
 
 /** Starts a devserver on the demo core; resolves to {base, admin, stop}. */
-export async function startDemo({ live = false } = {}) {
+export async function startDemo({ live = false, linked = false } = {}) {
   const dir = fs.mkdtempSync(path.join(TMP, 'ph-h-e2e-'));
   const bin = build();
   const port = await freePort();
   const adminPort = await freePort();
   const args = ['-addr', `127.0.0.1:${port}`, '-admin', `127.0.0.1:${adminPort}`, '-tmp', dir, '-quiet'];
   if (live) args.push('-live');
+  if (linked) args.push('-linked');
   const proc = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   proc.stdout.on('data', (b) => { out += b; });

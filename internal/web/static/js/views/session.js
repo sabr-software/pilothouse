@@ -8,7 +8,7 @@
 // actions, number formatting, extra icons), so they need no new modules.
 
 import { h, icon, inkStamp, agentName, repoName, stateLabel, agoLong, clock, relPath, fill, add, toMs } from '../dom.js';
-import { store, api, onEvent } from '../api.js';
+import { store, api, onEvent, onOtherMachine } from '../api.js';
 import { requestCard } from '../card.js';
 import { renderMarkdown } from '../markdown.js';
 import { askTitle, plainStep, commandLabel, fillProof } from './today.js';
@@ -272,7 +272,7 @@ export function sessionView(id) {
     }
     const u = usage || s.usage;
     const took = receipt && receipt.since && toMs(receipt.since) ? Math.max(0, (toMs(s.updated_at) - toMs(receipt.since)) / 1000) : 0;
-    const meta = [agentName(s.agent), statusWords(s), took >= 60 ? fmtDuration(took) : null, u && u.cost_usd >= 0.01 ? '≈ ' + fmtUSD(u.cost_usd) : null].filter(Boolean);
+    const meta = [onOtherMachine(s) ? 'on ' + s.machine : null, agentName(s.agent), statusWords(s), took >= 60 ? fmtDuration(took) : null, u && u.cost_usd >= 0.01 ? '≈ ' + fmtUSD(u.cost_usd) : null].filter(Boolean);
     fill(headEl,
       h('h1', { class: 'page-title rk' }, h('span', { class: 'ag ' + s.agent, 'aria-hidden': 'true' }), h('b', null, repoName(s)),
         s.branch ? h('span', { class: 'br' }, ' · ' + s.branch) : null),

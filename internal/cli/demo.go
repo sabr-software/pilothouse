@@ -46,6 +46,7 @@ type demoOptions struct {
 	noOpen   bool
 	local    bool
 	httpPort int
+	linked   bool
 }
 
 func newDemoCmd() *cobra.Command {
@@ -75,6 +76,7 @@ skip that). Otherwise it runs in this computer's browser only.`,
 	cmd.Flags().BoolVar(&o.noOpen, "no-open", false, "don't open the browser")
 	cmd.Flags().BoolVar(&o.local, "local", false, "this computer only: don't serve the demo on your tailnet")
 	cmd.Flags().IntVar(&o.httpPort, "tailscale-port", 8443, "HTTPS port on your tailnet for the demo")
+	cmd.Flags().BoolVar(&o.linked, "linked", false, "add a pretend second computer, as if linked with pilothouse link")
 	return cmd
 }
 
@@ -164,7 +166,7 @@ func runDemo(ctx context.Context, w io.Writer, o demoOptions) error {
 	defer logf.Close()
 	log := slog.New(slog.NewTextHandler(logf, nil))
 
-	core := demo.New(demo.Options{Machine: cfg.Machine})
+	core := demo.New(demo.Options{Machine: cfg.Machine, Linked: o.linked})
 	dctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go core.Run(dctx)

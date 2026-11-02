@@ -190,7 +190,7 @@ func newDevicesCmd() *cobra.Command {
 				return nil
 			}
 			tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(tw, "ID\tNAME\tNOTIFICATIONS\tPAIRED\tLAST SEEN")
+			fmt.Fprintln(tw, "ID\tNAME\tKEY\tNOTIFICATIONS\tPAIRED\tLAST SEEN")
 			for _, d := range ds {
 				push := "off"
 				if d.PushOK {
@@ -200,7 +200,7 @@ func newDevicesCmd() *cobra.Command {
 				if d.LastSeenAt != nil {
 					seen = rmtAgo(*d.LastSeenAt)
 				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", d.ID, d.Name, push, d.CreatedAt.Local().Format("2006-01-02"), seen)
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", d.ID, d.Name, d.Fingerprint, push, d.CreatedAt.Local().Format("2006-01-02"), seen)
 			}
 			return tw.Flush()
 		},

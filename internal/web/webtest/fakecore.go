@@ -36,6 +36,8 @@ type FakeCore struct {
 	SubBuffer int
 	Machine   string
 	Version   string
+	// Machines is reported in snapshots (a hub with linked machines).
+	Machines []api.MachineInfo
 	// Now is the clock; defaults to time.Now.
 	Now func() time.Time
 }
@@ -215,7 +217,8 @@ func (f *FakeCore) Subscribers() int {
 func (f *FakeCore) Snapshot(context.Context) (api.Snapshot, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	snap := api.Snapshot{Seq: f.seq, Machine: f.Machine, Version: f.Version, Presence: f.presence}
+	snap := api.Snapshot{Seq: f.seq, Machine: f.Machine, Version: f.Version, Presence: f.presence,
+		Machines: append([]api.MachineInfo(nil), f.Machines...)}
 	for _, s := range f.sessions {
 		snap.Sessions = append(snap.Sessions, s)
 	}

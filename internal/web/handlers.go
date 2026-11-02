@@ -9,10 +9,17 @@ import (
 	"time"
 
 	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/xasdta/pilothouse/internal/core"
 )
 
 func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request) {
-	snap, err := s.d.Core.Snapshot(r.Context())
+	var snap api.Snapshot
+	var err error
+	if linkedCall(r) {
+		snap, err = s.d.Core.Snapshot(r.Context()) // this machine only
+	} else {
+		snap, err = s.links.snapshot(r.Context())
+	}
 	if err != nil {
 		s.writeCoreErr(w, err)
 		return
@@ -87,6 +94,9 @@ func (s *Server) handleSetPresence(w http.ResponseWriter, r *http.Request) {
 		s.writeCoreErr(w, err)
 		return
 	}
+	if !linkedCall(r) {
+		s.links.setPresence(b.Mode) // away from a phone means away on every machine
+	}
 	writeJSON(w, http.StatusOK, s.d.Core.Presence())
 }
 
@@ -123,7 +133,13 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
-	sub, err := s.d.Core.Subscribe(ctx, after)
+	var sub *core.Subscription
+	var err error
+	if linkedCall(r) {
+		sub, err = s.d.Core.Subscribe(ctx, after) // this machine only
+	} else {
+		sub, err = s.links.subscribe(ctx, after)
+	}
 	if err != nil {
 		s.log.Warn("subscribe", "err", err)
 		writeControl(w)

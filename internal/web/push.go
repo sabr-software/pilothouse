@@ -248,7 +248,7 @@ func payloadFor(n core.Notification, now time.Time) (pushPayload, int, webpush.U
 	case n.Request != nil:
 		r := n.Request
 		p.RequestID, p.SessionID = r.ID, r.SessionID
-		p.Tag, p.URL = PushTag(r.ID), "/r/"+r.ID
+		p.Tag, p.URL = PushTag(r.ID), "/r/"+url.PathEscape(r.ID)
 		p.Request = &pushRequest{ID: r.ID, Checkpoint: string(r.Checkpoint), Summary: truncate(r.Summary, 200)}
 		// One-tap Allow/Deny only for permissions: a bare allow can't
 		// answer a question, and a plan should be read first.
@@ -260,7 +260,7 @@ func payloadFor(n core.Notification, now time.Time) (pushPayload, int, webpush.U
 		}
 		urgency = webpush.UrgencyHigh
 	case n.Session != nil:
-		p.SessionID, p.Tag, p.URL = n.Session.ID, n.Session.ID, "/s/"+n.Session.ID
+		p.SessionID, p.Tag, p.URL = n.Session.ID, n.Session.ID, "/s/"+url.PathEscape(n.Session.ID)
 	}
 	if len(n.URL) > 1 && n.URL[0] == '/' && n.URL[1] != '/' { // the sender's deep link (a task: /t/<id>)
 		p.URL = n.URL
@@ -280,7 +280,7 @@ func resolvedPayload(r api.Request, deviceName func(string) string) pushPayload 
 		body += " — " + by
 	}
 	return pushPayload{Type: pushTypeResolved, Kind: pushTypeResolved, Title: truncate(title, 120), Body: truncate(body, 400),
-		Tag: PushTag(r.ID), URL: "/r/" + r.ID, RequestID: r.ID, SessionID: r.SessionID, Status: string(r.Status), By: by}
+		Tag: PushTag(r.ID), URL: "/r/" + url.PathEscape(r.ID), RequestID: r.ID, SessionID: r.SessionID, Status: string(r.Status), By: by}
 }
 
 // pushTarget is one subscription and the device it belongs to.
@@ -362,7 +362,10 @@ func (s *Server) Withdraw(ctx context.Context, r api.Request) error {
 func (s *Server) DeviceName(ctx context.Context, id string) string {
 	var name string
 	if err := s.d.DB.QueryRowContext(ctx, `SELECT name FROM web_devices WHERE id = ?`, id).Scan(&name); err != nil {
-		return ""
+		// A hub's device, answering over a link.
+		if s.d.DB.QueryRowContext(ctx, `SELECT name FROM web_link_devices WHERE id = ?`, id).Scan(&name) != nil {
+			return ""
+		}
 	}
 	return name
 }

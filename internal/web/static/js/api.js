@@ -4,7 +4,8 @@
 //   api(method, path, body?)      JSON fetch; throws ApiError {status, code, message}
 //   signed(path, action, target, payload)  signed v2 action (keystore.js); resolves to
 //                                 the response JSON (null on 204), throws ApiError
-//   store                         live state: me, seq, machine, sessions (Map), requests
+//   store                         live state: me, seq, machine, machines (linked machines,
+//                                 with this one; empty when none are linked), sessions (Map), requests
 //                                 (Map), tasks (Map), presence, conn, loaded, rulesRev
 //                                 (bumped on policy.changed)
 //   subscribe(fn)                 fn(kind) once per frame after changes; returns unsubscribe
@@ -61,6 +62,7 @@ export const store = {
   me: null,
   seq: 0,
   machine: '',
+  machines: [], // [{name, self, online, error}] when machines are linked (pilothouse link)
   sessions: new Map(),
   requests: new Map(),
   tasks: new Map(),
@@ -102,6 +104,7 @@ export function changed(kind = 'data') {
 export function loadSnapshot(snap) {
   store.seq = snap.seq;
   store.machine = snap.machine;
+  store.machines = snap.machines || [];
   store.presence = snap.presence;
   store.sessions = new Map(snap.sessions.map((s) => [s.id, s]));
   store.requests = new Map(snap.requests.map((r) => [r.id, r]));
@@ -132,6 +135,13 @@ function applyEvent(ev) {
       break;
     case 'policy.changed':
       store.rulesRev++;
+      break;
+    case 'machine.changed':
+      if (d && d.name) {
+        const i = store.machines.findIndex((m) => m.name === d.name);
+        if (d.removed) { if (i >= 0) store.machines.splice(i, 1); } else if (i >= 0) store.machines[i] = { ...store.machines[i], ...d };
+        else store.machines.push(d);
+      }
       break;
     case 'device.changed':
       if (d && store.me && d.id === store.me.device.id) {
@@ -300,3 +310,17 @@ addEventListener('pagehide', () => {
 addEventListener('pageshow', (e) => {
   if (e.persisted && store.loaded) { backoff = 0; failingSince = 0; connect(); }
 });
+
+// ---------- Machines (pilothouse link) ----------
+
+/** True when sessions from more than one machine are in view. */
+export function multiMachine() { return store.machines.length > 1; }
+
+/** The machine a session runs on ('' when unknown). */
+export function machineOf(s) { return (s && s.machine) || ''; }
+
+/** True for a session on a linked machine rather than this one. */
+export function onOtherMachine(s) { return multiMachine() && !!s && !!s.machine && s.machine !== store.machine; }
+
+/** The machine record for a name, if linked. */
+export function machineInfo(name) { return store.machines.find((m) => m.name === name) || null; }

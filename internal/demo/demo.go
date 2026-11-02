@@ -33,6 +33,9 @@ type Options struct {
 	// tasks) instead of also raising new requests and keeping agents
 	// busy. Screenshots and end-to-end tests use it for a stable inbox.
 	Quiet bool
+	// Linked pretends a second computer, "laptop", is linked to this one
+	// (pilothouse link): two of the sessions run there.
+	Linked bool
 }
 
 // Home is the made-up home directory of the demo machine.
@@ -108,6 +111,9 @@ func New(o Options) *Core {
 		nextID:   100,
 	}
 	c.seed()
+	if o.Linked {
+		c.linkLaptop()
+	}
 	return c
 }
 
@@ -191,3 +197,18 @@ func (c *Core) session(id string) (api.Session, bool) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// LinkedMachine is the pretend linked computer of Options.Linked.
+const LinkedMachine = "laptop"
+
+// linkLaptop moves three sessions (one waiting for an answer) to a pretend
+// linked computer.
+func (c *Core) linkLaptop() {
+	c.FakeCore.Machines = []api.MachineInfo{
+		{Name: c.opt.Machine, Self: true, Online: true, Version: c.FakeCore.Version},
+		{Name: LinkedMachine, Online: true, Version: c.FakeCore.Version},
+	}
+	for _, id := range []string{"s_site000002", "s_dotfile05", "s_infra0006"} {
+		c.UpdateSession(id, func(s *api.Session) { s.Machine = LinkedMachine })
+	}
+}

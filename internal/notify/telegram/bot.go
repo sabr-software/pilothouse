@@ -166,9 +166,11 @@ func (b *Bot) Send(ctx context.Context, n core.Notification) error {
 		if n.Session == nil {
 			return nil
 		}
-		canReply := b.o.Decisions && n.Session.Caps.Reply
+		// A linked machine's session can't take a reply through this
+		// machine's bot.
+		canReply := b.o.Decisions && n.Session.Caps.Reply && !n.Linked
 		m, err := b.send(ctx, SendMessage{ChatID: chat, Text: sessionText(n, canReply)})
-		if err != nil {
+		if err != nil || n.Linked {
 			return err
 		}
 		return b.db.saveMessage(ctx, msgRow{ChatID: chat, MessageID: m.MessageID, Kind: kindSession, SessionID: n.Session.ID})
@@ -194,6 +196,11 @@ func (b *Bot) sendRequest(ctx context.Context, chat int64, n core.Notification) 
 	r := *n.Request
 	st := answerState{Answers: map[string]string{}}
 	text := fitRequest(n, st, b.o.Now())
+	if n.Linked {
+		// From a linked machine: only a paired device can answer it there.
+		_, err := b.send(ctx, SendMessage{ChatID: chat, Text: text + "\n\n<i>Answer in the Pilothouse app.</i>"})
+		return err
+	}
 	kb, data, err := b.keyboard(ctx, chat, r, st)
 	if err != nil {
 		return err

@@ -306,6 +306,10 @@ func (s *Server) handleTerminalInput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
+	if d := deviceOf(r); d.untrusted { // over a link: its key changed (or lost trust) since it opened the terminal
+		writeErr(w, http.StatusForbidden, "untrusted_device", s.untrustedMsg())
+		return
+	}
 	if !s.terminals.valid(r.Header.Get("X-Terminal-Token"), id, deviceOf(r).ID, s.now()) {
 		writeErr(w, http.StatusForbidden, "terminal_token", "the terminal token is missing, expired or for another session; open the terminal again")
 		return

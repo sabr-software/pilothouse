@@ -13,6 +13,8 @@ export function settingsView() {
   const appearance = h('div', { class: 'group group-pad' });
   const device = h('div', { class: 'group' });
   const conn = h('div', { class: 'group' });
+  const machines = h('div', { class: 'group' });
+  let machinesKey = '';
   const tile = (c, i) => h('span', { class: 'icon-tile ' + c, 'aria-hidden': 'true' }, icon(i));
 
   add(root,
@@ -30,6 +32,7 @@ export function settingsView() {
     section('Appearance', 0, appearance),
     section('This device', 0, device),
     section('Connection', 0, conn),
+    section('Machines', 0, machines),
     section('About', 0, about()),
     h('section', { class: 'section' },
       h('div', { class: 'group' }, h('button', { class: 'setting danger', type: 'button', onclick: signOut }, 'Sign out this device')),
@@ -202,7 +205,9 @@ export function settingsView() {
       h('div', { class: 'group-pad' }, h('label', { class: 'field-label', for: 'device-name' }, 'Name'), form),
       h('div', { class: 'setting' }, tile(store.keyMissing ? 'amber' : 'green', 'key'),
         h('div', { class: 'label' }, h('b', null, 'Signing key'),
-          h('span', null, store.keyMissing ? 'Missing — approvals and replies cannot be signed' : 'Kept on this device; signs every answer, reply and rule')),
+          h('span', null, store.keyMissing ? 'Missing — approvals and replies cannot be signed' : 'Kept on this device; signs every answer, reply and rule'),
+          // Linked computers show this when they ask to trust the device.
+          !store.keyMissing && d.fingerprint ? h('span', { class: 'key-fp' }, 'Key ', h('code', null, d.fingerprint)) : null),
         !store.keyMissing ? h('div', { class: 'value' }, 'P-256')
           : d.passkey && passkeySupported() ? restoreKeyButton('btn small secondary', renderDevice)
             : link('/pair', { class: 'value' }, 'Pair again')),
@@ -233,6 +238,27 @@ export function settingsView() {
       h('div', { class: 'setting' }, tile('blue', 'auto'),
         h('div', { class: 'label' }, h('b', null, 'Reload the app'), h('span', null, 'Pick up an update after Pilothouse is upgraded on your computer')),
         h('button', { class: 'btn small', type: 'button', onclick: () => location.reload() }, 'Reload')));
+  }
+
+  // ---- Machines (pilothouse link) ----
+  function renderMachines() {
+    const key = JSON.stringify(store.machines);
+    if (key === machinesKey) return;
+    machinesKey = key;
+    const here = store.machine || (store.me && store.me.machine) || 'this computer';
+    if (store.machines.length < 2) {
+      fill(machines,
+        h('div', { class: 'setting' }, tile('gray', 'desk'),
+          h('div', { class: 'label' }, h('b', null, 'Only ' + here),
+            h('span', null, 'To see another computer’s sessions here, run ', h('code', null, 'pilothouse link add'), ` on ${here}, then the command it prints on the other computer.`))));
+      return;
+    }
+    fill(machines, store.machines.map((m) => h('div', { class: 'setting machine' + (m.online ? '' : ' off') },
+      tile(m.self ? 'blue' : m.online ? 'green' : 'gray', 'desk'),
+      h('div', { class: 'label' }, h('b', null, m.name),
+        h('span', null, m.self ? 'This computer: the hub your devices talk to' : m.online ? 'Linked · online' : (m.error || 'Linked · offline'))),
+      h('div', { class: 'value' }, m.version ? (/^\d/.test(m.version) ? 'v' + m.version : m.version) : ''))),
+    h('p', { class: 'group-note' }, 'Link another computer: run ', h('code', null, 'pilothouse link add'), ` on ${here}. Rules, tasks and insights are per computer; this app shows ${here}’s.`));
   }
 
   function about() {
@@ -267,11 +293,13 @@ export function settingsView() {
   renderAppearance();
   renderDevice();
   renderConn();
+  renderMachines();
   return {
     el: root,
     update(kind) {
       renderPresence();
       renderConn();
+      renderMachines();
       if (kind === 'data' && !device.contains(document.activeElement)) renderDevice();
     },
     destroy() { removeEventListener('pilothouse:theme', onTheme); },

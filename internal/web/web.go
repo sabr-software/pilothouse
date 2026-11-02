@@ -95,6 +95,12 @@ type Server struct {
 
 	pushMu sync.Mutex
 	pushed map[string]pushedRequest // request id → devices its push reached (push.go)
+
+	links  *linkHub       // machines linked to this one (link.go)
+	linked *http.ServeMux // routes a hub may call (linked.go)
+
+	notifyMu sync.Mutex
+	notify   core.Notifier // delivers what linked machines forward
 }
 
 // New migrates web_* tables and loads/creates VAPID keys.
@@ -146,6 +152,8 @@ func New(d Deps) (*Server, error) {
 		s.pubMtime = fi.ModTime()
 	}
 	s.pubChecked = s.now()
+	s.links = newLinkHub(s)
+	s.linked = s.linkedRoutes()
 	s.handler = s.routes()
 	return s, nil
 }
@@ -318,6 +326,10 @@ func (s *Server) routes() http.Handler {
 
 	// Unauthenticated API.
 	mux.HandleFunc("POST /api/pair", csrf(s.handlePair))
+	// Linked machines (link.go, linked.go): token-authenticated, no cookie.
+	mux.HandleFunc("/api/link/m/", s.handleLinked)
+	mux.HandleFunc("POST /api/link/hub/join", s.handleLinkJoin)
+	mux.HandleFunc("POST /api/link/hub/{op}", s.handleLinkHub)
 	mux.HandleFunc("POST /api/actions/{token}", s.handleAction)
 
 	// Device API.
@@ -326,11 +338,13 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/vapid", a(s.handleVAPID))
 	mux.HandleFunc("GET /api/snapshot", a(s.handleSnapshot))
 	mux.HandleFunc("GET /api/events", a(s.handleEvents))
-	mux.HandleFunc("GET /api/sessions/{id}", a(s.handleSession))
-	mux.HandleFunc("GET /api/sessions/{id}/events", a(s.handleSessionEvents))
-	mux.HandleFunc("POST /api/sessions/{id}/seen", a(csrf(s.handleSeen)))
-	mux.HandleFunc("GET /api/requests/{id}", a(s.handleRequest))
-	mux.HandleFunc("POST /api/requests/{id}/decide", a(csrf(s.handleDecide)))
+	// Calls about one session or request go to the machine that has it.
+	f := s.fwd
+	mux.HandleFunc("GET /api/sessions/{id}", a(f(s.handleSession)))
+	mux.HandleFunc("GET /api/sessions/{id}/events", a(f(s.handleSessionEvents)))
+	mux.HandleFunc("POST /api/sessions/{id}/seen", a(csrf(f(s.handleSeen))))
+	mux.HandleFunc("GET /api/requests/{id}", a(f(s.handleRequest)))
+	mux.HandleFunc("POST /api/requests/{id}/decide", a(csrf(f(s.handleDecide))))
 	mux.HandleFunc("GET /api/presence", a(s.handlePresence))
 	mux.HandleFunc("PUT /api/presence", a(csrf(s.handleSetPresence)))
 	mux.HandleFunc("POST /api/push/subscribe", a(csrf(s.handleSubscribe)))
