@@ -310,11 +310,13 @@ computer, in a new [herdr](https://herdr.dev) tab (or a Terminal window);
 - Transcripts are read only from the agents' own folders (`~/.claude/projects`,
   `$CODEX_HOME/sessions`), with symlinks resolved, and only as regular `.jsonl`
   files with bounded reads: a hook payload can't point Pilothouse at anything else.
-- Telemetry: none. Apart from the notification services you configure (Web
-  Push, ntfy, Telegram, webhooks), the only network call is a daily anonymous
-  update check, sending the version, OS, arch and an ID that changes every
-  month. Turn it off with `update_check: false` or
-  `PILOTHOUSE_NO_UPDATE_CHECK=1`.
+- Nothing about your work leaves the machine. Apart from the notification
+  services you configure (Web Push, ntfy, Telegram, webhooks), the only
+  network call is a daily anonymous update check, sending the version, OS,
+  arch and an ID that changes every month. pilothouse.dev uses it to count
+  active installs: it keeps the date, a hash of the ID, the version, OS and
+  arch, no IP address, for 13 months ([privacy](https://pilothouse.dev/privacy)).
+  Turn it off with `update_check: false` or `PILOTHOUSE_NO_UPDATE_CHECK=1`.
 
 ## Status
 
