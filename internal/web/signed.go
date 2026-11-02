@@ -35,6 +35,7 @@ const (
 	ActionTerminal = "terminal" // target: session id; payload: {} (mints an input token)
 	ActionRule     = "rule"     // target: "add" | "remove:<name>" | "enable:<name>" | "disable:<name>" | "preset:<name>"
 	ActionTask     = "task"     // target: "new" | task id
+	ActionDesktop  = "desktop"  // target: session id; payload: {} (open it on the computer)
 )
 
 // maxSignedBody bounds a signed request body (the payload is inside it).

@@ -189,11 +189,11 @@ check('a card’s rule link lands on the rule', await page.$eval('#rule-protect-
 const swOK = await page.evaluate(async () => {
   const reg = await navigator.serviceWorker.ready;
   const keys = await caches.keys();
-  const c = await caches.open('pilothouse-shell-v5');
+  const c = await caches.open('pilothouse-shell-v6');
   const n = (await c.keys()).length;
   return { active: !!reg.active, keys, n };
 });
-check('service worker: active, shell precached', swOK.active && swOK.keys.includes('pilothouse-shell-v5') && swOK.n >= 30, JSON.stringify(swOK));
+check('service worker: active, shell precached', swOK.active && swOK.keys.includes('pilothouse-shell-v6') && swOK.n >= 30, JSON.stringify(swOK));
 const ctx = browser.defaultBrowserContext();
 await ctx.overridePermissions(demo.base, ['notifications']);
 const cdp = await page.createCDPSession();

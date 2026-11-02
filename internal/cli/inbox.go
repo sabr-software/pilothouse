@@ -31,6 +31,7 @@ import (
 	"github.com/xasdta/pilothouse/internal/api"
 	"github.com/xasdta/pilothouse/internal/client"
 	"github.com/xasdta/pilothouse/internal/config"
+	"github.com/xasdta/pilothouse/internal/desktop"
 	"github.com/xasdta/pilothouse/internal/notify"
 	"github.com/xasdta/pilothouse/internal/notify/telegram"
 	"github.com/xasdta/pilothouse/internal/paths"
@@ -1976,6 +1977,31 @@ func runDoctor(ctx context.Context) []doctorCheck {
 	if doctorKeepAwake != nil {
 		if c := doctorKeepAwake(ctx, cfg); c != nil {
 			add(c.Name, c.level, c.Detail, c.Fix)
+		}
+	}
+
+	// Where "Open in herdr / Terminal" opens sessions.
+	if cfg.Desktop.Open == desktop.ModeOff {
+		add("desktop", checkInfo, "opening sessions on this computer is off", "")
+	} else {
+		dctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		info, why := desktop.New(cfg.Desktop.Open, cfg.Desktop.TerminalApp, cfg.Desktop.HerdrSession, "", "").Check(dctx)
+		cancel()
+		tasks := ""
+		if cfg.Desktop.OpenTasks {
+			tasks = "; tasks from your phone open there as they start"
+		}
+		switch info.Target {
+		case api.DesktopHerdr:
+			add("desktop", checkOK, "sessions open in a new herdr tab"+tasks, "")
+		case api.DesktopTerminal:
+			add("desktop", checkOK, "sessions open in a "+info.Label+" window (herdr isn't running)"+tasks, "")
+		default:
+			reason := "nothing to open them in"
+			if why != nil {
+				reason = strings.TrimPrefix(why.Error(), desktop.ErrUnavailable.Error()+": ")
+			}
+			add("desktop", checkInfo, "sessions can't be opened on this computer: "+reason, "start herdr to open sessions and tasks in a herdr tab")
 		}
 	}
 

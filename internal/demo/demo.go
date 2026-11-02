@@ -62,6 +62,8 @@ type Core struct {
 	revision map[string]int          // plan request lineage → revision number
 	added    map[string]api.RuleSpec // suggestion id → spec (to report "already added")
 	script   int                     // position in the lively request script
+
+	desktopTabs map[string]bool // sessions "opened in herdr" (desktop.go)
 }
 
 // scheduled is a reaction that runs once its time has come.

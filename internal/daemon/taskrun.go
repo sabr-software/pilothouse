@@ -408,6 +408,7 @@ func (d *Daemon) launchTask(ctx context.Context, m *task.Manager, p *task.Prepar
 		d.notifyTask(out, nil, core.NotifyBlocked, "Task waiting",
 			"Claude is asking whether to trust this folder — attach to the session to answer", true)
 	}
+	d.openTaskOnDesktop(out)
 	return out, nil
 }
 

@@ -118,3 +118,28 @@ func TestUpdateBaseAndErrors(t *testing.T) {
 		t.Fatal("broken file overwritten")
 	}
 }
+
+func TestDesktop(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("PILOTHOUSE_HOME", home)
+	if err := os.WriteFile(paths.Config(), []byte("desktop:\n  open: herdr\n  terminal_app: iTerm\n  herdr_session: work\n  open_tasks: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load()
+	if err != nil || c.Desktop.Open != "herdr" || c.Desktop.TerminalApp != "iTerm" || c.Desktop.HerdrSession != "work" || !c.Desktop.OpenTasks {
+		t.Fatalf("%+v %v", c.Desktop, err)
+	}
+	for _, bad := range []func(*Config){
+		func(c *Config) { c.Desktop.Open = "window" },
+		func(c *Config) { c.Desktop.TerminalApp = "/Applications/Terminal.app" },
+		func(c *Config) { c.Desktop.TerminalApp = "-n" },
+		func(c *Config) { c.Desktop.HerdrSession = "a b" },
+		func(c *Config) { c.Desktop.HerdrSession = "--help" },
+	} {
+		c := Default()
+		bad(c)
+		if c.Validate() == nil {
+			t.Fatalf("accepted %+v", c.Desktop)
+		}
+	}
+}

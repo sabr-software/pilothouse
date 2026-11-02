@@ -34,6 +34,8 @@ func (s *Server) routesV02(mux *http.ServeMux, a func(http.HandlerFunc) http.Han
 	mux.HandleFunc("POST /api/sessions/{id}/terminal/token", a(csrf(s.handleTerminalToken)))
 	mux.HandleFunc("GET /api/sessions/{id}/terminal", a(s.handleTerminalStream))
 	mux.HandleFunc("POST /api/sessions/{id}/terminal/input", a(csrf(s.handleTerminalInput)))
+	mux.HandleFunc("GET /api/desktop", a(s.handleDesktopInfo))
+	mux.HandleFunc("POST /api/sessions/{id}/desktop", a(csrf(s.handleOpenOnDesktop)))
 	// F6.
 	mux.HandleFunc("GET /api/insights", a(s.handleInsights))
 	// F5.

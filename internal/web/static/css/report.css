@@ -198,3 +198,8 @@ main.bare:has(.view.rep) { padding-bottom: 0; }
 /* After the first render, live updates replace content without replaying entrance animations. */
 .settled > *, .settled .stampw svg, .settled .stampw::after, .settled .vs { animation: none !important; }
 .settled .stampw::after { opacity: 0; }
+
+/* "Open in herdr / Terminal" (desktop.js) */
+.rhead .desk-btn { margin-top: 12px; gap: 6px; }
+.desk-btn .spin, .desk-tool .spin { margin-right: 2px; }
+.desk-btn .desk-on { min-width: 0; max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-weight: 500; }

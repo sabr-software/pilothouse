@@ -14,6 +14,7 @@ import { renderMarkdown } from '../markdown.js';
 import { askTitle, plainStep, commandLabel, fillProof } from './today.js';
 import { link, toast } from '../ui.js';
 import { avatar, section, sessionLine } from './rows.js';
+import { desktopButton } from '../desktop.js';
 
 // ---------- Shared helpers (session, terminal, tasks, insights) ----------
 
@@ -219,6 +220,7 @@ export function sessionView(id) {
   const filesEl = h('div');
   const detailsEl = h('div');
   add(root, headEl, needsEl, catchEl, feedEl, filesEl, detailsEl, replyEl);
+  const desk = desktopButton(id);
   let receipt = null;
 
   const since = lastVisit(id);
@@ -274,7 +276,9 @@ export function sessionView(id) {
     fill(headEl,
       h('h1', { class: 'page-title rk' }, h('span', { class: 'ag ' + s.agent, 'aria-hidden': 'true' }), h('b', null, repoName(s)),
         s.branch ? h('span', { class: 'br' }, ' · ' + s.branch) : null),
-      h('p', { class: 'rmeta' }, meta.join(' · ')));
+      h('p', { class: 'rmeta' }, meta.join(' · ')),
+      desk.el);
+    desk.update();
     fill(detailsEl, h('details', { class: 'rdetails', open: moreOpen, ontoggle: (e) => { moreOpen = e.currentTarget.open; } },
       h('summary', null, 'Session details', ico('down', 'sm')),
       h('dl', { class: 'kv' },
@@ -1011,9 +1015,10 @@ export function sessionView(id) {
 
   return {
     el: root,
-    update: render,
+    update: (kind) => { render(kind); desk.update(); },
     destroy() {
       destroyed = true;
+      desk.destroy();
       clearInterval(clocks);
       off();
       clearTimeout(timer);

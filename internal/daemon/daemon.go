@@ -28,6 +28,7 @@ import (
 	"github.com/xasdta/pilothouse/internal/api"
 	"github.com/xasdta/pilothouse/internal/config"
 	"github.com/xasdta/pilothouse/internal/core"
+	"github.com/xasdta/pilothouse/internal/desktop"
 	"github.com/xasdta/pilothouse/internal/notify"
 	"github.com/xasdta/pilothouse/internal/paths"
 	"github.com/xasdta/pilothouse/internal/policy"
@@ -85,6 +86,9 @@ type Options struct {
 	// TaskStarter starts the agent of a task begun from a device;
 	// defaults to task.SpawnStarter (a detached `pilothouse run` holder).
 	TaskStarter task.Starter
+	// Desktop opens sessions on this computer; nil builds one from the
+	// config (desktop.go).
+	Desktop *desktop.Opener
 
 	// keepAwake replaces the platform's sleep inhibitor (tests).
 	keepAwake *awakeRunner
@@ -115,6 +119,7 @@ type Daemon struct {
 	pres    presenceState
 	plugins pluginHub // command channels of plugin agents (plugin.go)
 	tasks   taskState // taskrun.go
+	desk    deskState // desktop.go
 
 	replies replyState // holders, terminal input, keep-awake (reply.go, terminal.go, keepawake.go)
 

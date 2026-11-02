@@ -263,7 +263,10 @@ pilothouse task done t_8d1x --pr          # push and open a PR with gh
 A repo's `.pilothouse/task.yaml` copies files such as `.env` into each new
 worktree and runs setup commands (`npm ci`) before the agent starts — setup
 only in repos you trust. Tasks started from the phone go through the same
-steps. See [docs/TASKS.md](docs/TASKS.md).
+steps. **Open in herdr** in the web app shows a task's agent on the
+computer, in a new [herdr](https://herdr.dev) tab (or a Terminal window);
+`desktop.open_tasks: true` does that for every task as it starts. See
+[docs/TASKS.md](docs/TASKS.md).
 
 ## Security model
 

@@ -74,6 +74,40 @@ file as it grows. Then:
   The task's note says how to restore the branch
   (`git branch pilothouse/<slug> <sha>`).
 
+## See it on the computer
+
+A task's agent runs in a terminal Pilothouse holds in the background, so it
+doesn't appear in your terminal app or in herdr by itself. To see it there:
+
+- **Open in herdr** (or **Open in Terminal**) on the session page, the task
+  page or the live terminal opens it on the computer: a new
+  [herdr](https://herdr.dev) tab in the session's folder when herdr is
+  running, otherwise a Terminal window (macOS). The tab runs
+  `pilothouse attach --replay <session>`, so it shows recent output and you
+  can type into the agent. Tapping again brings the same tab to the front
+  (and attaches again if you detached there with ctrl+\). Closing the tab
+  only detaches; the agent keeps running. Opening is signed by your device.
+- To have every task you start from the phone open there as it starts, in
+  the background without taking focus:
+
+  ```yaml
+  desktop:
+    open_tasks: true
+  ```
+
+| Key | Default | |
+|---|---|---|
+| `desktop.open` | `auto` | `auto`: a herdr tab when herdr is running, else a Terminal window (macOS). `herdr`, `terminal` or `off`. |
+| `desktop.terminal_app` | `Terminal` | The macOS app for windows; any app that opens `.command` files, e.g. `iTerm`. |
+| `desktop.herdr_session` | herdr's default | A named herdr session (`herdr --session <name>`). |
+| `desktop.open_tasks` | `false` | Open each task started from a device as it starts. |
+
+The tab goes into the herdr workspace for the task's repository when there
+is one (matched by its checkout, then by name), otherwise the focused
+workspace. `pilothouse doctor` says where sessions will open. Sessions an
+agent runs in a terminal of its own (not `pilothouse run` or a task) can't
+be opened this way: switch to that terminal.
+
 ## Statuses and notifications
 
 | Status | Meaning |

@@ -8,6 +8,7 @@ import { link, go, toast } from '../ui.js';
 import { diffView } from '../diff.js';
 import { section } from './rows.js';
 import { ico, postAction, actionError, spinner, byLabel, diffStat } from './session.js';
+import { desktopButton } from '../desktop.js';
 
 const STATUS = {
   running: { label: 'Running', icon: 'play' },
@@ -308,6 +309,12 @@ export function taskView(id) {
   let busy = '';
   let destroyed = false;
   let refetch = 0;
+  let desk = null; // "Open in herdr" for the task's session
+  const deskFor = (sid) => {
+    if (desk && desk.sid !== sid) { desk.destroy(); desk = null; }
+    if (!desk && sid) desk = { ...desktopButton(sid), sid };
+    return desk;
+  };
   let headKey = '';
 
   const task = () => (store2.tasks || []).find((t) => t.id === id);
@@ -384,7 +391,9 @@ export function taskView(id) {
       t.session_id ? link('/s/' + t.session_id, { class: 'task-session' },
         ico('history', 'sm'),
         h('span', null, h('b', null, 'Open session'), s ? h('span', { class: 'pill ' + s.state }, stateLabel(s)) : null),
-        icon('chev', 'sm', 'chev')) : null)));
+        icon('chev', 'sm', 'chev')) : null,
+      t.session_id ? h('div', { class: 'task-desk' }, deskFor(t.session_id).el) : null)));
+    if (desk) desk.update();
   }
 
   // ---- Diff ----
@@ -510,7 +519,7 @@ export function taskView(id) {
   return {
     el: root,
     update: () => { const t = task(); if (t) { renderHead(t); renderProgress(t); } },
-    destroy() { destroyed = true; off(); clearTimeout(refetch); },
+    destroy() { destroyed = true; off(); clearTimeout(refetch); if (desk) desk.destroy(); },
   };
 }
 

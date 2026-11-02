@@ -16,6 +16,7 @@ import { h, agentName, repoName, fill, add, toMs } from '../dom.js';
 import { store, api } from '../api.js';
 import { link } from '../ui.js';
 import { ico, postAction, actionError, spinner } from './session.js';
+import { desktopButton } from '../desktop.js';
 
 const XTERM = '/vendor/xterm/xterm.mjs';
 const FIT = '/vendor/xterm/addon-fit.mjs';
@@ -165,7 +166,8 @@ export function terminalView(id) {
   // The accessible name starts with the visible text (WCAG 2.5.3).
   const fontDown = h('button', { class: 'term-tool', type: 'button', 'aria-label': 'A− smaller text', title: 'Smaller text' }, 'A−');
   const fontUp = h('button', { class: 'term-tool', type: 'button', 'aria-label': 'A+ larger text', title: 'Larger text' }, 'A+');
-  const bar = h('div', { class: 'term-bar' }, statusEl, modeEl, h('span', { class: 'spacer' }), fontDown, fontUp);
+  const desk = desktopButton(id, { variant: 'tool' });
+  const bar = h('div', { class: 'term-bar' }, statusEl, modeEl, h('span', { class: 'spacer' }), desk.el, fontDown, fontUp);
   const screen = h('div', { class: 'term-screen', role: 'region', 'aria-label': 'Terminal' });
   const frame = h('div', { class: 'term-frame' }, screen);
   const keysEl = h('div', { class: 'term-keys', role: 'toolbar', 'aria-label': 'Terminal keys', hidden: true });
@@ -605,15 +607,16 @@ export function terminalView(id) {
   renderTitle();
   setMode();
   if (!store.sessions.has(id)) {
-    api('GET', '/api/sessions/' + enc).then((s) => { store.sessions.set(s.id, s); if (!destroyed) renderTitle(); }, () => {});
+    api('GET', '/api/sessions/' + enc).then((s) => { store.sessions.set(s.id, s); if (!destroyed) { renderTitle(); desk.update(); } }, () => {});
   }
   start();
 
   return {
     el: root,
-    update: renderTitle,
+    update: () => { renderTitle(); desk.update(); },
     destroy() {
       destroyed = true;
+      desk.destroy();
       clearTimeout(retryTimer);
       clearTimeout(flushTimer);
       clearTimeout(resizeTimer);

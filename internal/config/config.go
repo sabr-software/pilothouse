@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -86,6 +87,24 @@ type Config struct {
 		Repos []string `yaml:"repos"`
 	} `yaml:"tasks"`
 
+	// Desktop shows sessions on this computer: "Open on this computer" in
+	// the web app, and tasks started from a device when OpenTasks is on.
+	Desktop struct {
+		// Open is where: "auto" (default: a herdr tab when herdr is
+		// running, else a terminal window on macOS), "herdr", "terminal"
+		// or "off".
+		Open string `yaml:"open"`
+		// TerminalApp is the macOS app for terminal windows (default
+		// "Terminal"; any app that opens .command files, e.g. "iTerm").
+		TerminalApp string `yaml:"terminal_app"`
+		// HerdrSession is the herdr session to add tabs to (herdr
+		// --session); empty means herdr's default session.
+		HerdrSession string `yaml:"herdr_session"`
+		// OpenTasks opens each task started from a device as it starts,
+		// in the background, so it is waiting on the desktop.
+		OpenTasks bool `yaml:"open_tasks"`
+	} `yaml:"desktop"`
+
 	// Retention is how long closed requests and raw hook events are kept.
 	Retention Duration `yaml:"retention"` // default 30 days
 
@@ -148,6 +167,8 @@ const (
 	CodexSessionIdleExpiry   = 2 * time.Hour
 )
 
+var herdrSessionRE = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$`)
+
 // Default returns the configuration used when no file exists.
 func Default() *Config {
 	c := &Config{}
@@ -193,6 +214,17 @@ func (c *Config) Validate() error {
 	case "", KeepAwakeWorking, KeepAwakeOff:
 	default:
 		return fmt.Errorf("keep_awake must be %q or %q, got %q", KeepAwakeWorking, KeepAwakeOff, c.KeepAwake)
+	}
+	switch c.Desktop.Open {
+	case "", "auto", "herdr", "terminal", "off":
+	default:
+		return fmt.Errorf("desktop.open must be auto, herdr, terminal or off, got %q", c.Desktop.Open)
+	}
+	if strings.ContainsAny(c.Desktop.TerminalApp, "/\x00\n") || strings.HasPrefix(c.Desktop.TerminalApp, "-") || len(c.Desktop.TerminalApp) > 64 {
+		return errors.New("desktop.terminal_app must be an app name such as Terminal or iTerm")
+	}
+	if c.Desktop.HerdrSession != "" && !herdrSessionRE.MatchString(c.Desktop.HerdrSession) {
+		return errors.New("desktop.herdr_session must be a herdr session name (letters, digits, - and _)")
 	}
 	if c.Usage.DailyBudgetUSD < 0 {
 		return errors.New("usage.daily_budget_usd must not be negative")

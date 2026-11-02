@@ -98,3 +98,15 @@ type TaskRunner interface {
 	TaskDiff(ctx context.Context, taskID string) (api.TaskDiff, error)
 	FinishTask(ctx context.Context, taskID string, f api.TaskFinish, by string) (api.Task, error)
 }
+
+// Desktop shows a wrapped session on the computer itself: a herdr tab or a
+// terminal window attached with `pilothouse attach`.
+type Desktop interface {
+	// DesktopInfo says where a session would open; Target is empty when
+	// it can't.
+	DesktopInfo(ctx context.Context) api.DesktopInfo
+	// OpenOnDesktop opens the session and brings it to the front.
+	// ErrUnsupported when nothing can show it (herdr not running, not
+	// macOS, turned off) or the session has no terminal.
+	OpenOnDesktop(ctx context.Context, sessionID, by string) (api.DesktopOpened, error)
+}
