@@ -38,7 +38,7 @@ changelog:
 brews:
   - name: pilothouse
     repository:
-      owner: xasdta
+      owner: sabr-software
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
@@ -52,7 +52,7 @@ brews:
 
 release:
   github:
-    owner: xasdta
+    owner: sabr-software
     name: pilothouse
   footer: |
     Install: `curl -fsSL https://pilothouse.dev/install.sh | sh` or `brew install xasdta/tap/pilothouse`, then run `pilothouse setup`.
