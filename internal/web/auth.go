@@ -15,9 +15,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/config"
-	"github.com/xasdta/pilothouse/internal/version"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/version"
 )
 
 const (

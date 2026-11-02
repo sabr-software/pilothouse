@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // DecisionEvent is the Data of an api.EventPolicyDecision event. The

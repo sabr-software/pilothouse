@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // migrations are numbered and applied once each, recorded in

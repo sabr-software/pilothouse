@@ -17,7 +17,7 @@ One inbox for Claude Code, Codex, OpenCode and Grok Build. Your rules run before
 ---
 
 ```sh
-curl -fsSL https://pilothouse.dev/install.sh | sh     # or: brew install xasdta/tap/pilothouse
+curl -fsSL https://pilothouse.dev/install.sh | sh     # or: brew install sabr-software/tap/pilothouse
 pilothouse demo      # optional: try the phone app with pretend agents (touches nothing)
 pilothouse setup     # hooks (shows the diff first), daemon, phone, test notification
 pilothouse run claude   # start agents through Pilothouse (or: codex, opencode)
@@ -346,7 +346,7 @@ agents (Copilot), team policies, and Windows.
 ## Build from source
 
 ```sh
-git clone https://github.com/xasdta/pilothouse && cd pilothouse
+git clone https://github.com/sabr-software/pilothouse && cd pilothouse
 go build -o pilothouse ./cmd/pilothouse   # Go 1.27+, no cgo
 go test -race ./...
 ```

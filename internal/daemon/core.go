@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/core"
-	"github.com/xasdta/pilothouse/internal/state"
-	"github.com/xasdta/pilothouse/internal/store"
-	"github.com/xasdta/pilothouse/internal/version"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/state"
+	"github.com/sabr-software/pilothouse/internal/store"
+	"github.com/sabr-software/pilothouse/internal/version"
 )
 
 // Snapshot window sizes (BUILD-SPEC §4).

@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 var usgT0 = time.Date(2026, 10, 23, 14, 30, 0, 0, time.UTC)

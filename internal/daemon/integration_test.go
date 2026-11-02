@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/client"
-	"github.com/xasdta/pilothouse/internal/core"
-	"github.com/xasdta/pilothouse/internal/policy"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/client"
+	"github.com/sabr-software/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/policy"
 )
 
 // The web package's local routes (pair, login-link, devices) are mounted on

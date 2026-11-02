@@ -7,8 +7,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/core"
 )
 
 const maxCommand = 80

@@ -13,10 +13,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/core"
-	"github.com/xasdta/pilothouse/internal/store"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/store"
 )
 
 // Agents integrated through a plugin running inside the agent (OpenCode;

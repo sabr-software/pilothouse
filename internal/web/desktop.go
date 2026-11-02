@@ -3,8 +3,8 @@ package web
 import (
 	"net/http"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/core"
 )
 
 // Open a session on the computer (core.Desktop): a herdr tab or a

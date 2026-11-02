@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/client"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/client"
 )
 
 // Local (Unix socket) API added in 0.2 for the CLI and the TUI. Calls that

@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/adapters/hookkit"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/adapters/hookkit"
 )
 
 // pluginJS is the plugin installed into OpenCode's plugins directory,

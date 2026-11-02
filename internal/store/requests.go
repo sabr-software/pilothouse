@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // PendingStatuses are the statuses a request can still be answered from

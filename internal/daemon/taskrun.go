@@ -15,13 +15,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/core"
-	"github.com/xasdta/pilothouse/internal/notify"
-	"github.com/xasdta/pilothouse/internal/paths"
-	"github.com/xasdta/pilothouse/internal/store"
-	"github.com/xasdta/pilothouse/internal/task"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/notify"
+	"github.com/sabr-software/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/store"
+	"github.com/sabr-software/pilothouse/internal/task"
 )
 
 // Tasks from devices (F7; workstream G). A device (or the local API)

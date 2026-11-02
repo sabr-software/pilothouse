@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/core"
 )
 
 // Live terminal for wrapped sessions (F3, workstream B). A device mints a

@@ -5,11 +5,11 @@ import (
 	"errors"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/config"
-	"github.com/xasdta/pilothouse/internal/policy"
-	"github.com/xasdta/pilothouse/internal/state"
-	"github.com/xasdta/pilothouse/internal/store"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/policy"
+	"github.com/sabr-software/pilothouse/internal/state"
+	"github.com/sabr-software/pilothouse/internal/store"
 )
 
 const (

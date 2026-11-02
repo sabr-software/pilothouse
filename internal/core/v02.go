@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // Optional capabilities added in 0.2 (docs/PLAN-0.2.md). The daemon

@@ -3,7 +3,7 @@ package daemon
 import (
 	"sync"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // waiters connects permission hooks that are holding for a decision with

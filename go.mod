@@ -1,4 +1,4 @@
-module github.com/xasdta/pilothouse
+module github.com/sabr-software/pilothouse
 
 go 1.27.3
 

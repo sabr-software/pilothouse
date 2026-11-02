@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/config"
 )
 
 // fakeAwake is an awakeRunner that records starts and stops.

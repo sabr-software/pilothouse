@@ -17,9 +17,9 @@ builds:
     flags: [-trimpath]
     ldflags:
       - -s -w
-      - -X github.com/xasdta/pilothouse/internal/version.Version={{.Version}}
-      - -X github.com/xasdta/pilothouse/internal/version.Commit={{.ShortCommit}}
-      - -X github.com/xasdta/pilothouse/internal/version.Date={{.Date}}
+      - -X github.com/sabr-software/pilothouse/internal/version.Version={{.Version}}
+      - -X github.com/sabr-software/pilothouse/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/sabr-software/pilothouse/internal/version.Date={{.Date}}
 
 archives:
   - id: default
@@ -55,4 +55,4 @@ release:
     owner: sabr-software
     name: pilothouse
   footer: |
-    Install: `curl -fsSL https://pilothouse.dev/install.sh | sh` or `brew install xasdta/tap/pilothouse`, then run `pilothouse setup`.
+    Install: `curl -fsSL https://pilothouse.dev/install.sh | sh` or `brew install sabr-software/tap/pilothouse`, then run `pilothouse setup`.

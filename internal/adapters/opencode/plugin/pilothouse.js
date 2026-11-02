@@ -1,4 +1,4 @@
-// Pilothouse for OpenCode — https://github.com/xasdta/pilothouse
+// Pilothouse for OpenCode — https://github.com/sabr-software/pilothouse
 // @pilothouse-managed: `pilothouse hooks install` writes this file and
 // `pilothouse hooks uninstall` removes it. Local edits are overwritten.
 //

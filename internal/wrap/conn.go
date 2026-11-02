@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 // Conn is a client connection to a holder socket.

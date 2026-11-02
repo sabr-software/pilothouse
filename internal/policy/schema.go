@@ -9,7 +9,7 @@ import (
 	"cel.dev/cel-go/cel"
 	"gopkg.in/yaml.v3"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // Limits that keep a policy file from becoming a performance problem at

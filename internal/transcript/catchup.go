@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/adapters/hookkit"
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/adapters/hookkit"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // CatchUpExtra is what the daemon knows that the transcript doesn't.

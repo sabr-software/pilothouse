@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // prunedSeqKey records the highest seq ever deleted by retention. A client

@@ -14,13 +14,13 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/adapters/all"
-	"github.com/xasdta/pilothouse/internal/adapters/hookkit"
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/client"
-	"github.com/xasdta/pilothouse/internal/config"
-	"github.com/xasdta/pilothouse/internal/proc"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/adapters/all"
+	"github.com/sabr-software/pilothouse/internal/adapters/hookkit"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/client"
+	"github.com/sabr-software/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/proc"
 )
 
 // ---------------------------------------------------------------- pilothouse hooks

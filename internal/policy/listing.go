@@ -3,7 +3,7 @@ package policy
 import (
 	"path/filepath"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // Listings for the Rules page and `pilothouse policy rules`.

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // claudeSession is a two-turn session exercising every record kind the

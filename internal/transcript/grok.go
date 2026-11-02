@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/adapters/hookkit"
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/adapters/hookkit"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // Grok Build keeps its durable transcript in

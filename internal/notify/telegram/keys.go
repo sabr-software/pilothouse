@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/config"
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 // PairTTL is how long a pairing link works.

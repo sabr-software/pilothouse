@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // testEnv points every Pilothouse location at temp dirs (BUILD-SPEC §2.1).

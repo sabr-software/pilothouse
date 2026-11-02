@@ -3,8 +3,8 @@ package state
 import (
 	"strings"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // FromHook maps a normalized hook event to the state it is evidence of

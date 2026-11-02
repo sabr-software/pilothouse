@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 // testEnv points every Pilothouse path at temp dirs (Invariant 1) and kills

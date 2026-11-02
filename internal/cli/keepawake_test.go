@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xasdta/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/config"
 )
 
 func TestKeepAwakeDoctor(t *testing.T) {

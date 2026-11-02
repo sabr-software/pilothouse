@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/adapters"
 )
 
 // maxArgs caps Proc.Args: ancestry travels in every hook envelope, and a

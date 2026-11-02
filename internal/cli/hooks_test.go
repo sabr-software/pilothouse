@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/adapters/all"
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/adapters/all"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 // hkEnv isolates a test (BUILD-SPEC invariant 1) and returns the env for
@@ -77,7 +77,7 @@ func hkBinary(t *testing.T) string {
 			return
 		}
 		hkBin = filepath.Join(dir, "pilothouse")
-		out, err := exec.Command("go", "build", "-o", hkBin, "github.com/xasdta/pilothouse/cmd/pilothouse").CombinedOutput()
+		out, err := exec.Command("go", "build", "-o", hkBin, "github.com/sabr-software/pilothouse/cmd/pilothouse").CombinedOutput()
 		if err != nil {
 			hkBinErr = err
 			t.Logf("%s", out)

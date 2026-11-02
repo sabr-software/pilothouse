@@ -3,7 +3,7 @@ package wrap
 import (
 	"strings"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // OSC 7501 is the Program Status Protocol (layer L1): an agent, or a

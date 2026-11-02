@@ -17,11 +17,11 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/client"
-	"github.com/xasdta/pilothouse/internal/paths"
-	"github.com/xasdta/pilothouse/internal/task"
-	"github.com/xasdta/pilothouse/internal/wrap"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/client"
+	"github.com/sabr-software/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/task"
+	"github.com/sabr-software/pilothouse/internal/wrap"
 )
 
 // Workstream D: `run`, `attach`, hidden `__holder`, and `task …`.

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")

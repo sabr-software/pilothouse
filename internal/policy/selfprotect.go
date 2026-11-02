@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // SelfProtectionRule is the name of the built-in rule that makes a person

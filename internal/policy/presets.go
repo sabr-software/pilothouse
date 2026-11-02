@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // Presets are named bundles of rules a person switches on from the inbox

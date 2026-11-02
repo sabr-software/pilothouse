@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 // SpawnOptions describes a holder to start in the background.

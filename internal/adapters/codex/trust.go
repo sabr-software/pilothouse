@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/xasdta/pilothouse/internal/adapters/hookkit"
+	"github.com/sabr-software/pilothouse/internal/adapters/hookkit"
 )
 
 // Codex runs a hook from ~/.codex/hooks.json only once it is trusted:

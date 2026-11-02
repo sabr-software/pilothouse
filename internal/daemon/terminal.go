@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/core"
-	"github.com/xasdta/pilothouse/internal/paths"
-	"github.com/xasdta/pilothouse/internal/store"
-	"github.com/xasdta/pilothouse/internal/wrap"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/store"
+	"github.com/sabr-software/pilothouse/internal/wrap"
 )
 
 // The live terminal of wrapped sessions (F3): watch connections to the

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 type fixture struct {

@@ -3,7 +3,7 @@ package policy
 // StarterPolicy is written by `pilothouse policy init`. Every rule in it is
 // a working example; tests compile it and check its behaviour.
 const StarterPolicy = `# Pilothouse policy — applied before every tool call of every agent.
-# Reference: https://github.com/xasdta/pilothouse/blob/main/docs/POLICY.md
+# Reference: https://github.com/sabr-software/pilothouse/blob/main/docs/POLICY.md
 #
 #   action: deny   block the call; the agent sees your message
 #   action: ask    make a person confirm (the agent's own prompt at the desk,

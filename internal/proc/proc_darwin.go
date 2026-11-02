@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/adapters"
 )
 
 // info reads kern.proc.pid for the parent and kernel name, and

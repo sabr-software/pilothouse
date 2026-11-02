@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 const grokSessionID = "019b0000-1111-7222-8333-444455556666"

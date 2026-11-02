@@ -26,14 +26,14 @@ import (
 
 	"github.com/creack/pty"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/client"
-	"github.com/xasdta/pilothouse/internal/presence"
-	"github.com/xasdta/pilothouse/internal/service"
-	"github.com/xasdta/pilothouse/internal/tui"
-	"github.com/xasdta/pilothouse/internal/version"
-	"github.com/xasdta/pilothouse/internal/wrap"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/client"
+	"github.com/sabr-software/pilothouse/internal/presence"
+	"github.com/sabr-software/pilothouse/internal/service"
+	"github.com/sabr-software/pilothouse/internal/tui"
+	"github.com/sabr-software/pilothouse/internal/version"
+	"github.com/sabr-software/pilothouse/internal/wrap"
 )
 
 var ibxT0 = time.Date(2026, 10, 22, 15, 4, 5, 0, time.UTC)
@@ -1152,7 +1152,7 @@ func ibxBinary(t *testing.T) string {
 			return
 		}
 		ibxBin = filepath.Join(dir, "pilothouse")
-		out, err := exec.Command("go", "build", "-o", ibxBin, "github.com/xasdta/pilothouse/cmd/pilothouse").CombinedOutput()
+		out, err := exec.Command("go", "build", "-o", ibxBin, "github.com/sabr-software/pilothouse/cmd/pilothouse").CombinedOutput()
 		if err != nil {
 			ibxBinErr = fmt.Errorf("%v\n%s", err, out)
 		}

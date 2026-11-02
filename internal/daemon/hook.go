@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/core"
-	"github.com/xasdta/pilothouse/internal/policy"
-	"github.com/xasdta/pilothouse/internal/state"
-	"github.com/xasdta/pilothouse/internal/store"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/policy"
+	"github.com/sabr-software/pilothouse/internal/state"
+	"github.com/sabr-software/pilothouse/internal/store"
 )
 
 const (

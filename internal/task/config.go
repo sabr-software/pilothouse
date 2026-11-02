@@ -16,7 +16,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/xasdta/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/config"
 )
 
 // ConfigFile is a repository's task settings, relative to its root. It is

@@ -3,7 +3,7 @@ package policy
 import (
 	"os"
 
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 // Check parses and compiles policy file contents exactly as Load would,

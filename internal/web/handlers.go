@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/core"
 )
 
 func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request) {

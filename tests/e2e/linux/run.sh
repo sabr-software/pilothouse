@@ -220,7 +220,7 @@ if [ -x "$REL_DIR/pilothouse" ]; then
 	if [ -n "${PH_E2E_VERSION:-}" ]; then
 		expect_match "version" "$rel_ver" "^v?${PH_E2E_VERSION#v}$"
 	else
-		latest=$(curl -fsSL ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} https://api.github.com/repos/xasdta/pilothouse/releases/latest | jq -r .tag_name)
+		latest=$(curl -fsSL ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} https://api.github.com/repos/sabr-software/pilothouse/releases/latest | jq -r .tag_name)
 		expect_match "version matches latest release $latest" "$rel_ver" "^v?${latest#v}$"
 	fi
 	expect_nomatch "commit stamped" "$(echo "$vj" | jq -r .commit)" "^(none|)$"

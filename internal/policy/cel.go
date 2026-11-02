@@ -12,7 +12,7 @@ import (
 	"cel.dev/cel-go/ext"
 	"cel.dev/cel-go/interpreter"
 
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 // celCostLimit bounds a single `when:` evaluation so a pathological

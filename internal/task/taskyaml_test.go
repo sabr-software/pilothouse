@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/paths"
-	"github.com/xasdta/pilothouse/internal/policy"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/policy"
 )
 
 func writeFile(t *testing.T, p, body string, mode os.FileMode) {

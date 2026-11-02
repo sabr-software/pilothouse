@@ -6,7 +6,7 @@ are the most important issues we get.
 ## Reporting a vulnerability
 
 Please report privately through GitHub's
-[private vulnerability reporting](https://github.com/xasdta/pilothouse/security/advisories/new).
+[private vulnerability reporting](https://github.com/sabr-software/pilothouse/security/advisories/new).
 Don't open a public issue. You'll get an acknowledgement within a few days, and
 credit in the release notes if you'd like it.
 

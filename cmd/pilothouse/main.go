@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"github.com/xasdta/pilothouse/internal/cli"
+	"github.com/sabr-software/pilothouse/internal/cli"
 )
 
 func main() {

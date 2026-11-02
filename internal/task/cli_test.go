@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/wrap"
+	"github.com/sabr-software/pilothouse/internal/wrap"
 )
 
 // TestCLIEndToEnd drives `pilothouse task …` through the real binary: the

@@ -28,8 +28,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/creack/pty"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/client"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/client"
 )
 
 // vt is a minimal terminal emulator: enough of ECMA-48 for Bubble Tea's

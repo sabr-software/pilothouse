@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/adapters/hookkit"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/adapters/hookkit"
 )
 
 var owned = hookkit.OwnedBy("codex")

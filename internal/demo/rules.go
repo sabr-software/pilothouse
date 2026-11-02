@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/core"
 )
 
 // Rules from the inbox (F5) on canned rules. The tester really evaluates

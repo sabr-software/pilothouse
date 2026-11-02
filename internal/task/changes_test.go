@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // agentWork makes the kind of mess a real agent leaves in a worktree:

@@ -4,8 +4,8 @@ import (
 	"context"
 	"runtime"
 
-	"github.com/xasdta/pilothouse/internal/config"
-	"github.com/xasdta/pilothouse/internal/daemon"
+	"github.com/sabr-software/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/daemon"
 )
 
 // 0.2 workstream B: the keep-awake line of `pilothouse doctor`.

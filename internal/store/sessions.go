@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // Rows keep the full object as JSON in `data`; the other columns exist only

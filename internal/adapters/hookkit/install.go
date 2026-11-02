@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/adapters"
 )
 
 // Plan is a computed edit of one JSON hooks file.

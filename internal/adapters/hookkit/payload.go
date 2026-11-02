@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/adapters"
 )
 
 // MaxMessage caps HookEvent.Message: prompts can be whole pasted files,

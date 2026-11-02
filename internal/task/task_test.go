@@ -16,8 +16,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 // testEnv isolates Pilothouse paths and git configuration (no user hooks,

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/preview"
-	"github.com/xasdta/pilothouse/internal/risk"
-	"github.com/xasdta/pilothouse/internal/transcript"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/preview"
+	"github.com/sabr-software/pilothouse/internal/risk"
+	"github.com/sabr-software/pilothouse/internal/transcript"
 )
 
 // enrichRequest adds what helps a person decide at a glance to a request

@@ -2,12 +2,12 @@
 package all
 
 import (
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/adapters/claude"
-	"github.com/xasdta/pilothouse/internal/adapters/codex"
-	"github.com/xasdta/pilothouse/internal/adapters/grok"
-	"github.com/xasdta/pilothouse/internal/adapters/opencode"
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/adapters/claude"
+	"github.com/sabr-software/pilothouse/internal/adapters/codex"
+	"github.com/sabr-software/pilothouse/internal/adapters/grok"
+	"github.com/sabr-software/pilothouse/internal/adapters/opencode"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // List returns every adapter, in display order.

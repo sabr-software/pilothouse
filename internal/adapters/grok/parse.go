@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/adapters/hookkit"
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/adapters/hookkit"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // kinds maps Grok's event names, after normalization, to Pilothouse's.

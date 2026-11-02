@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/policy"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/policy"
 )
 
 func TestRotatingFile(t *testing.T) {

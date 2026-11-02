@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 func TestMachineName(t *testing.T) {

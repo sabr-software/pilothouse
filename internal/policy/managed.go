@@ -15,7 +15,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // The managed rules file, ~/.pilothouse/rules.yaml (paths.Rules()), holds
@@ -132,7 +132,7 @@ func (m *ManagedFile) PresetOn(name string) bool {
 const managedHeader = `# Pilothouse managed rules: rules added from the inbox or with
 # ` + "`pilothouse policy add`" + `, and the presets that are switched on.
 # Pilothouse rewrites this file; put hand-written rules in policy.yaml.
-# Reference: https://github.com/xasdta/pilothouse/blob/main/docs/POLICY.md
+# Reference: https://github.com/sabr-software/pilothouse/blob/main/docs/POLICY.md
 `
 
 // parseManaged reads rules.yaml strictly. It does not compile the rules.

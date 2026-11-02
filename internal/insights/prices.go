@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/xasdta/pilothouse/internal/config"
-	"github.com/xasdta/pilothouse/internal/transcript"
+	"github.com/sabr-software/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/transcript"
 )
 
 // Price is a list price in USD per million tokens.

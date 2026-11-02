@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/core"
-	"github.com/xasdta/pilothouse/internal/desktop"
-	"github.com/xasdta/pilothouse/internal/paths"
-	"github.com/xasdta/pilothouse/internal/wrap"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/desktop"
+	"github.com/sabr-software/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/wrap"
 )
 
 // Opening sessions on the desktop (desktop.Opener): the web app's "Open

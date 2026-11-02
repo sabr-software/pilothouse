@@ -5,9 +5,9 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/state"
-	"github.com/xasdta/pilothouse/internal/store"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/state"
+	"github.com/sabr-software/pilothouse/internal/store"
 )
 
 // RegisterWrapped records a session started by `pilothouse run`. It is

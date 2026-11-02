@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/xasdta/pilothouse/internal/service"
+	"github.com/sabr-software/pilothouse/internal/service"
 )
 
 func main() {

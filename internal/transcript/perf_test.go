@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // writeBigClaude writes a synthetic Claude transcript of at least size

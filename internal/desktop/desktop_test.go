@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // fakeHerdr answers herdr commands like herdr 0.9 does.

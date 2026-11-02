@@ -25,7 +25,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // Modes for config `desktop.open`.

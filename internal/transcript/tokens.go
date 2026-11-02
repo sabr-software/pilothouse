@@ -3,7 +3,7 @@ package transcript
 import (
 	"math"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // Tokens is the token use of one model response (or a sum of them), in

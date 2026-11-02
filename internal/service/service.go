@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 const (
@@ -180,7 +180,7 @@ func (m *Manager) renderUnit() []byte {
 	b.WriteString(`# Written by pilothouse service install. Changes are overwritten.
 [Unit]
 Description=Pilothouse daemon: one inbox for every coding agent
-Documentation=https://github.com/xasdta/pilothouse
+Documentation=https://github.com/sabr-software/pilothouse
 
 [Service]
 Type=simple

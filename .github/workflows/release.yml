@@ -1,7 +1,7 @@
 name: release
 # Manual for now: releases are cut locally with `goreleaser release --clean`.
 # To automate, add a HOMEBREW_TAP_TOKEN secret (fine-grained, contents:write on
-# xasdta/homebrew-tap) and switch this back to `push: tags: ["v*"]`.
+# sabr-software/homebrew-tap) and switch this back to `push: tags: ["v*"]`.
 on:
   workflow_dispatch:
 permissions:
@@ -22,5 +22,5 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # A fine-grained token with contents:write on xasdta/homebrew-tap.
+          # A fine-grained token with contents:write on sabr-software/homebrew-tap.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

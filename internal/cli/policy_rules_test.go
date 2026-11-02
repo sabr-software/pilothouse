@@ -9,9 +9,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/paths"
-	"github.com/xasdta/pilothouse/internal/policy"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/policy"
 )
 
 func TestPolicyManagedRulesWithoutDaemon(t *testing.T) {

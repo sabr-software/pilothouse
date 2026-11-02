@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/demo"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/demo"
 )
 
 // The device API over the demo core, end to end with signed actions:

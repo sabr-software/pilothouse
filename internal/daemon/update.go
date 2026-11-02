@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/store"
-	"github.com/xasdta/pilothouse/internal/version"
+	"github.com/sabr-software/pilothouse/internal/store"
+	"github.com/sabr-software/pilothouse/internal/version"
 )
 
 // The anonymous update check (BUILD-SPEC invariant 7) sends only the

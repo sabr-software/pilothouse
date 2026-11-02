@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/tui"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/tui"
 )
 
 // Agent settings Pilothouse suggests besides its hooks (adapters.Suggester;

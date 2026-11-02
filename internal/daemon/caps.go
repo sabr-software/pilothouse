@@ -3,8 +3,8 @@ package daemon
 import (
 	"context"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/store"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/store"
 )
 
 // capsFor computes what a person can do with a session; saveSession

@@ -6,9 +6,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/core"
-	"github.com/xasdta/pilothouse/internal/web/webtest"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/web/webtest"
 )
 
 // deskCore adds core.Desktop to the fake core.

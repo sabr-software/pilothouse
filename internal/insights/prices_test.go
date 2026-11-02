@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/xasdta/pilothouse/internal/config"
-	"github.com/xasdta/pilothouse/internal/transcript"
+	"github.com/sabr-software/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/transcript"
 )
 
 func TestLookup(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/xasdta/pilothouse/internal/version"
+	"github.com/sabr-software/pilothouse/internal/version"
 )
 
 // ExitError carries a specific exit code out of a command.

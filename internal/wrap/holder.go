@@ -21,9 +21,9 @@ import (
 
 	"github.com/creack/pty"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/client"
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/client"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 const (

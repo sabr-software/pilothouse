@@ -9,7 +9,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // Insights (F6) from a deterministic history: every past day is built

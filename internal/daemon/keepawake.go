@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/config"
 )
 
 // Keep-awake (config keep_awake: working | off). While any session is

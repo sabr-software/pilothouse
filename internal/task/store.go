@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 // Tasks are recorded locally in paths.Home()/tasks.json, always, and

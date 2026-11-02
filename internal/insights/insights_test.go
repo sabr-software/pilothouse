@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/store"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/store"
 )
 
 // A fixed clock and zone: 2026-10-23 14:30 in a UTC−7 zone, which is

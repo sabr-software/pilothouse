@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // UsageRow is one session's token use on one local day with one model

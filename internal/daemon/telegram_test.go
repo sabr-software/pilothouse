@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/config"
-	"github.com/xasdta/pilothouse/internal/notify/telegram"
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/notify/telegram"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 const tgToken = "987654321:AAdaemonTESTtokenDaemonTESTtoken"

@@ -15,8 +15,8 @@ import (
 
 	"github.com/creack/pty"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 // These tests drive the real pilothouse binary: `run -d` spawns a detached

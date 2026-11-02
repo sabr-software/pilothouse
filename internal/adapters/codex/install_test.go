@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/adapters/hookkit"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/adapters/hookkit"
 )
 
 const userHooks = `{

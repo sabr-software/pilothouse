@@ -21,10 +21,10 @@ import (
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/core"
-	"github.com/xasdta/pilothouse/internal/notify"
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/notify"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 // VAPIDSubscriber identifies this application server to push services

@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/policy"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/policy"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")

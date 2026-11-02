@@ -20,12 +20,12 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/xasdta/pilothouse/internal/adapters/all"
-	"github.com/xasdta/pilothouse/internal/client"
-	"github.com/xasdta/pilothouse/internal/config"
-	"github.com/xasdta/pilothouse/internal/daemon"
-	"github.com/xasdta/pilothouse/internal/notify/telegram"
-	"github.com/xasdta/pilothouse/internal/version"
+	"github.com/sabr-software/pilothouse/internal/adapters/all"
+	"github.com/sabr-software/pilothouse/internal/client"
+	"github.com/sabr-software/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/daemon"
+	"github.com/sabr-software/pilothouse/internal/notify/telegram"
+	"github.com/sabr-software/pilothouse/internal/version"
 )
 
 // Seams for tests.

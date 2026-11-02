@@ -16,11 +16,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/core"
-	"github.com/xasdta/pilothouse/internal/policy"
-	"github.com/xasdta/pilothouse/internal/risk"
-	"github.com/xasdta/pilothouse/internal/store"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/policy"
+	"github.com/sabr-software/pilothouse/internal/risk"
+	"github.com/sabr-software/pilothouse/internal/store"
 )
 
 // Rules from the inbox (F5; workstream D). Changes go to the managed rules

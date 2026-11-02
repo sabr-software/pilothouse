@@ -24,14 +24,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/client"
-	"github.com/xasdta/pilothouse/internal/core"
-	"github.com/xasdta/pilothouse/internal/paths"
-	"github.com/xasdta/pilothouse/internal/policy"
-	"github.com/xasdta/pilothouse/internal/task"
-	"github.com/xasdta/pilothouse/internal/web"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/client"
+	"github.com/sabr-software/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/policy"
+	"github.com/sabr-software/pilothouse/internal/task"
+	"github.com/sabr-software/pilothouse/internal/web"
 )
 
 // taskEnv isolates git (no user config, hooks or signing) and puts fake

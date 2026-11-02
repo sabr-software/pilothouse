@@ -6,7 +6,7 @@ and web port 7593, and never touch `~/.claude`, `~/.pilothouse`,
 `~/Library/LaunchAgents` or the real launchd label.
 
 ```sh
-go build -ldflags "-X github.com/xasdta/pilothouse/internal/version.Version=0.1.1" -o /tmp/qa3/pilothouse ./cmd/pilothouse
+go build -ldflags "-X github.com/sabr-software/pilothouse/internal/version.Version=0.1.1" -o /tmp/qa3/pilothouse ./cmd/pilothouse
 tests/e2e/reliability/notify.sh        # ntfy.sh (random topic), webhooks ok/slow/fail, osascript injection, action tokens
 tests/e2e/reliability/launchd.sh       # relabelled plist (dev.pilothouse.qa3): KeepAlive, kickstart -k, bootout, holder survival, attach
 tests/e2e/reliability/update_check.sh  # live pilothouse.dev/api/version behind logging CONNECT proxies; opt-outs send nothing

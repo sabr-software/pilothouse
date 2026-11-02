@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // TestRequestUserInput: Codex's question tool is read-only for

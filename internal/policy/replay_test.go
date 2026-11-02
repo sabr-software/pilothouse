@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 func hookEvent(t *testing.T, seq int64, at time.Time, sid string, he adapters.HookEvent) api.Event {

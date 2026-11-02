@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/adapters"
 )
 
 // info reads /proc/<pid>/stat for the parent and kernel name and

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // The fixtures *_ask_user_question and *_exit_plan_mode* were captured

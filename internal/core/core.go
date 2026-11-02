@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 var (

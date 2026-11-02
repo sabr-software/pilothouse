@@ -6,8 +6,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/wrap"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/wrap"
 )
 
 func main() {

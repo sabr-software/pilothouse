@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/config"
-	"github.com/xasdta/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/core"
 )
 
 func TestGrantPrefix(t *testing.T) {
@@ -309,7 +309,7 @@ func TestUpgradeURL(t *testing.T) {
 		want string
 	}{
 		{updateInfo{Latest: "1.0.0"}, "https://pilothouse.dev/docs/install"},
-		{updateInfo{URL: "https://github.com/xasdta/pilothouse/releases/tag/v1.0.0"}, "https://github.com/xasdta/pilothouse/releases/tag/v1.0.0"},
+		{updateInfo{URL: "https://github.com/sabr-software/pilothouse/releases/tag/v1.0.0"}, "https://github.com/sabr-software/pilothouse/releases/tag/v1.0.0"},
 		{updateInfo{Notes: "https://pilothouse.dev/changelog#1.0.0"}, "https://pilothouse.dev/changelog#1.0.0"},
 		{updateInfo{Notes: "Bug fixes."}, "https://pilothouse.dev/docs/install"},
 		{updateInfo{URL: "javascript:alert(1)"}, "https://pilothouse.dev/docs/install"},

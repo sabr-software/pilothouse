@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/core"
 )
 
 var _ core.Desktop = (*Core)(nil)

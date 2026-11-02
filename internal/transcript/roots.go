@@ -12,10 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/adapters/codex"
-	"github.com/xasdta/pilothouse/internal/adapters/grok"
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/adapters/codex"
+	"github.com/sabr-software/pilothouse/internal/adapters/grok"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/paths"
 )
 
 // Roots are the only directories transcripts are read from. A transcript

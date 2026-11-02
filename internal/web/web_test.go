@@ -26,11 +26,11 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/config"
-	"github.com/xasdta/pilothouse/internal/core"
-	"github.com/xasdta/pilothouse/internal/notify"
-	"github.com/xasdta/pilothouse/internal/web/webtest"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/core"
+	"github.com/sabr-software/pilothouse/internal/notify"
+	"github.com/sabr-software/pilothouse/internal/web/webtest"
 )
 
 var _ notify.Pusher = (*Server)(nil)

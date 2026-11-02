@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // Codex's apply_patch envelope (codex-rs/apply-patch, parser.rs):

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // Time limits for the steps of a ship. Nothing waits for a person: git and

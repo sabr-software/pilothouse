@@ -101,7 +101,7 @@ export function activityWebNext(w) {
   return {
     session_id: 's_web01', available: true, cursor: 'c2', usage: { ...w.usageA, output_tokens: w.usageA.output_tokens + 900, cost_usd: 2.41 },
     items: [
-      { id: 'a_pending', turn: 4, at: ago(0.5), kind: 'tool', tool: 'Bash', tool_kind: 'shell', summary: 'Run: go test -race ./...', result: 'ok  github.com/xasdta/pilothouse/internal/web\t4.112s\n… 31 packages ok' },
+      { id: 'a_pending', turn: 4, at: ago(0.5), kind: 'tool', tool: 'Bash', tool_kind: 'shell', summary: 'Run: go test -race ./...', result: 'ok  github.com/sabr-software/pilothouse/internal/web\t4.112s\n… 31 packages ok' },
       { id: 'a_new1', turn: 4, at: ago(0.1), kind: 'text', text: 'All green. Pushing feat/session-page now.' },
     ],
   };
@@ -259,9 +259,9 @@ export const TERM_SCREEN = [
   `${rgb(215, 119, 87)}╰───────────────────────────────────────────╯${ESC}0m\r\n\r\n`,
   `${ESC}2m>${ESC}0m Run the whole Go suite with the race detector\r\n\r\n`,
   `${ESC}32m⏺${ESC}0m ${ESC}1mBash${ESC}0m(go test -race ./...)\r\n`,
-  `  ⎿  ok   github.com/xasdta/pilothouse/internal/api      0.412s\r\n`,
-  `     ok   github.com/xasdta/pilothouse/internal/web      4.112s\r\n`,
-  `     ${ESC}31mFAIL${ESC}0m github.com/xasdta/pilothouse/internal/task     2.020s\r\n\r\n`,
+  `  ⎿  ok   github.com/sabr-software/pilothouse/internal/api      0.412s\r\n`,
+  `     ok   github.com/sabr-software/pilothouse/internal/web      4.112s\r\n`,
+  `     ${ESC}31mFAIL${ESC}0m github.com/sabr-software/pilothouse/internal/task     2.020s\r\n\r\n`,
   `${ESC}32m⏺${ESC}0m One test failed in internal/task. Fix it before pushing?\r\n\r\n`,
   `${rgb(120, 120, 120)}─────────────────────────────────────────────${ESC}0m\r\n`,
   `${ESC}1m❯${ESC}0m `,

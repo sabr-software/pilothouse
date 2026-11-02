@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/xasdta/pilothouse/internal/adapters"
-	"github.com/xasdta/pilothouse/internal/adapters/opencode"
+	"github.com/sabr-software/pilothouse/internal/adapters"
+	"github.com/sabr-software/pilothouse/internal/adapters/opencode"
 )
 
 func main() {

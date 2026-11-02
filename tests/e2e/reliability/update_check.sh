@@ -10,7 +10,7 @@
 here=$(cd "$(dirname "$0")" && pwd); repo=$(cd "$here/../../.." && pwd)
 QA=${QA:-/tmp/qa3}; R=$QA/upd; rm -rf "$R"; mkdir -p "$R"
 PH=$QA/pilothouse
-( cd "$repo" && go build -ldflags "-X github.com/xasdta/pilothouse/internal/version.Version=0.1.0" -o "$R/pilothouse-0.1.0" ./cmd/pilothouse ) || exit 1
+( cd "$repo" && go build -ldflags "-X github.com/sabr-software/pilothouse/internal/version.Version=0.1.0" -o "$R/pilothouse-0.1.0" ./cmd/pilothouse ) || exit 1
 pids=()
 cleanup() { for p in "${pids[@]}"; do kill "$p" 2>/dev/null; done; }
 trap cleanup EXIT

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 // The demo machine on a busy afternoon: four agents need you (a push to
@@ -141,16 +141,16 @@ func (c *Core) seed() {
 	item(ph, 44*m, say("The card still signs v1 decisions. I'll switch it to `respond` (signed v2) and roll back when another device answered first."))
 	item(ph, 41*m, edit("Edit", "internal/web/static/js/card.js", 38, 12), fileEdit("internal/web/static/js/card.js", 38, 12))
 	item(ph, 38*m, edit("Edit", "internal/web/static/css/app.css", 15, 3), fileEdit("internal/web/static/css/app.css", 15, 3))
-	item(ph, 33*m, run("Bash", "go test -race ./internal/web/...", "--- FAIL: TestRespondConflict (0.03s)\n    signed_test.go:142: second answer: got 200, want 409\nFAIL\nFAIL\tgithub.com/xasdta/pilothouse/internal/web\t4.112s", true))
+	item(ph, 33*m, run("Bash", "go test -race ./internal/web/...", "--- FAIL: TestRespondConflict (0.03s)\n    signed_test.go:142: second answer: got 200, want 409\nFAIL\nFAIL\tgithub.com/sabr-software/pilothouse/internal/web\t4.112s", true))
 	item(ph, 32*m, say("One test expects a 409 for the second answer, but the fake core never closed the request. Fixing the fake, not the test."))
 	item(ph, 31*m, edit("Edit", "internal/web/webtest/fakecore.go", 6, 2), fileEdit("internal/web/webtest/fakecore.go", 6, 2))
-	item(ph, 28*m, run("Bash", "go test -race ./...", "ok  \tgithub.com/xasdta/pilothouse/internal/api\t0.412s\nok  \tgithub.com/xasdta/pilothouse/internal/daemon\t9.870s\nok  \tgithub.com/xasdta/pilothouse/internal/policy\t2.304s\nok  \tgithub.com/xasdta/pilothouse/internal/web\t4.031s\n214 tests passed", false))
+	item(ph, 28*m, run("Bash", "go test -race ./...", "ok  \tgithub.com/sabr-software/pilothouse/internal/api\t0.412s\nok  \tgithub.com/sabr-software/pilothouse/internal/daemon\t9.870s\nok  \tgithub.com/sabr-software/pilothouse/internal/policy\t2.304s\nok  \tgithub.com/sabr-software/pilothouse/internal/web\t4.031s\n214 tests passed", false))
 	item(ph, 26*m, api.ActivityItem{Kind: api.ActivitySubagent, Summary: "Review the inbox diff for XSS and signature handling", Text: "code-reviewer started"})
 	item(ph, 25*m+30*time.Second, api.ActivityItem{Kind: api.ActivityTool, Tool: "Grep", ToolKind: api.ToolRead, Summary: "Search innerHTML", Result: "No matches", Sidechain: true})
 	item(ph, 24*m, api.ActivityItem{Kind: api.ActivityTool, Tool: "Read", ToolKind: api.ToolRead, Summary: "Read internal/web/signed.go", Result: "Read 134 lines", Sidechain: true})
 	item(ph, 22*m, api.ActivityItem{Kind: api.ActivitySubagent, Summary: "code-reviewer finished", Text: "No issues. One nit: cap the deny reason at 2,000 characters like the server does."})
 	item(ph, 21*m, edit("Edit", "internal/web/static/js/card.js", 1, 1), fileEdit("internal/web/static/js/card.js", 1, 1))
-	item(ph, 17*m, run("Bash", "go test -race ./...", "ok  \tgithub.com/xasdta/pilothouse/internal/api\t0.398s\nok  \tgithub.com/xasdta/pilothouse/internal/daemon\t9.712s\nok  \tgithub.com/xasdta/pilothouse/internal/policy\t2.288s\nok  \tgithub.com/xasdta/pilothouse/internal/web\t4.006s\n214 tests passed", false))
+	item(ph, 17*m, run("Bash", "go test -race ./...", "ok  \tgithub.com/sabr-software/pilothouse/internal/api\t0.398s\nok  \tgithub.com/sabr-software/pilothouse/internal/daemon\t9.712s\nok  \tgithub.com/sabr-software/pilothouse/internal/policy\t2.288s\nok  \tgithub.com/sabr-software/pilothouse/internal/web\t4.006s\n214 tests passed", false))
 	item(ph, 12*m, run("Bash", `git commit -am "web: signed answers with rollback"`, "[main 8d03e7b] web: signed answers with rollback\n 3 files changed, 60 insertions(+), 18 deletions(-)", false))
 	item(ph, 80*time.Second, say("All 214 tests pass and the build is clean. Pushing to main so CI can cut the release."))
 	request(70*time.Second, api.Request{ID: "r_gitpush03", SessionID: ph, Checkpoint: api.CheckpointPermission, Tool: "Bash", ToolKind: api.ToolShell,

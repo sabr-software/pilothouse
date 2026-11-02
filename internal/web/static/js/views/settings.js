@@ -271,7 +271,7 @@ export function settingsView() {
           h('div', { class: 'label' }, h('b', null, 'Keyboard shortcuts'), h('span', null, 'Press ? anywhere')), icon('chev', 'sm', 'chev'))
         : null,
       h('div', { class: 'setting' }, tile('gray', 'info'),
-        h('div', { class: 'label' }, h('b', null, 'Docs and source'), h('span', { class: 'mono' }, 'github.com/xasdta/pilothouse'))));
+        h('div', { class: 'label' }, h('b', null, 'Docs and source'), h('span', { class: 'mono' }, 'github.com/sabr-software/pilothouse'))));
   }
 
   async function signOut() {

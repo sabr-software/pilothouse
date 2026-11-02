@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xasdta/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/api"
 )
 
 func TestRing(t *testing.T) {

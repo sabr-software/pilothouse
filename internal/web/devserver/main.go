@@ -36,10 +36,10 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/xasdta/pilothouse/internal/api"
-	"github.com/xasdta/pilothouse/internal/config"
-	"github.com/xasdta/pilothouse/internal/demo"
-	"github.com/xasdta/pilothouse/internal/web"
+	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/demo"
+	"github.com/sabr-software/pilothouse/internal/web"
 )
 
 func main() {
