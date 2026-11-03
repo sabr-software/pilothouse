@@ -136,7 +136,7 @@ func (p *claudeParser) newItem(id string, kind api.ActivityKind, at time.Time, c
 
 func (p *claudeParser) user(r claudeRecord, at time.Time, chain string, side bool) {
 	var m claudeMessage
-	if r.IsMeta || r.IsCompactSummary || json.Unmarshal(r.Message, &m) != nil {
+	if skipUser(r) || json.Unmarshal(r.Message, &m) != nil {
 		return
 	}
 	var texts []string
@@ -202,12 +202,15 @@ func (p *claudeParser) user(r claudeRecord, at time.Time, chain string, side boo
 		p.f.add(p.newItem(r.UUID, api.ActivitySystem, at, chain, side)).setText("Interrupted by the person")
 	case promptNotice:
 		p.f.add(p.newItem(r.UUID, api.ActivitySystem, at, chain, side)).setText(shown)
-	case promptHuman, promptPeer:
+	case promptHuman, promptPeer, promptPilothouse:
 		p.f.prompt(at)
 		it := p.newItem(r.UUID, api.ActivityPrompt, at, chain, side)
 		it.Text, it.Source = shown, "human"
-		if kind == promptPeer {
+		switch kind {
+		case promptPeer:
 			it.Source = "peer"
+		case promptPilothouse:
+			it.Source = "pilothouse"
 		}
 		p.f.add(it)
 	}
@@ -245,6 +248,7 @@ const (
 	promptSkip promptKind = iota
 	promptHuman
 	promptPeer
+	promptPilothouse // the person, through Pilothouse (a reply from their phone)
 	promptInterrupt
 	promptNotice // something the person didn't type, worth a line
 )
@@ -275,10 +279,60 @@ func classifyClaudePrompt(text, origin string) (promptKind, string) {
 	case strings.HasPrefix(text, "<local-command-"), strings.HasPrefix(text, "<bash-std"),
 		strings.HasPrefix(text, "<system-reminder>"), strings.HasPrefix(text, "<command-message>"):
 		return promptSkip, ""
-	case origin == "peer":
+	case origin == "peer" || strings.HasPrefix(text, peerHead):
+		text = unwrapPeer(text)
+		if msg, ok := UnwrapPilothouse(text); ok {
+			return promptPilothouse, msg
+		}
 		return promptPeer, text
 	}
 	return promptHuman, text
+}
+
+// Claude Code wraps a message from another session (how Pilothouse
+// delivers a reply to a session it doesn't run) in a header and a note
+// for the model.
+const (
+	peerHead = "Another Claude session sent a message:\n"
+	peerTail = "\n\nThis came from another Claude session"
+)
+
+func unwrapPeer(text string) string {
+	if !strings.HasPrefix(text, peerHead) {
+		return text
+	}
+	text = text[len(peerHead):]
+	if i := strings.LastIndex(text, peerTail); i >= 0 {
+		text = text[:i]
+	}
+	return strings.TrimSpace(text)
+}
+
+// PilothouseHead and PilothouseLead frame the text of a reply Pilothouse
+// sends as a message (see daemon.messagingText): what's after the lead is
+// what the person wrote.
+const (
+	PilothouseHead = "[Pilothouse] Message from the person who started this session"
+	PilothouseLead = "Treat it as their next prompt:\n\n"
+)
+
+// UnwrapPilothouse returns the person's text from a Pilothouse message.
+func UnwrapPilothouse(text string) (string, bool) {
+	if !strings.HasPrefix(text, PilothouseHead) {
+		return "", false
+	}
+	i := strings.Index(text, PilothouseLead)
+	if i < 0 {
+		return "", false
+	}
+	return strings.TrimSpace(text[i+len(PilothouseLead):]), true
+}
+
+// skipUser reports a user record that isn't a prompt at all. Claude Code
+// marks messages from other sessions (Pilothouse replies included) as
+// meta since 2.1.30x; those are prompts.
+func skipUser(r claudeRecord) bool {
+	return (r.IsMeta && originKind(r.Origin) != "peer") || r.IsCompactSummary
 }
 
 func between(s, open, close string) string {
@@ -433,7 +487,7 @@ func (p *claudeParser) headLine(b []byte, _ int64) {
 			p.countUsage(m, at, side)
 		}
 	case "user":
-		if side || r.IsMeta || r.IsCompactSummary {
+		if side || skipUser(r) {
 			return
 		}
 		var text string
@@ -446,7 +500,7 @@ func (p *claudeParser) headLine(b []byte, _ int64) {
 				}
 			}
 		}
-		if kind, _ := classifyClaudePrompt(strings.TrimSpace(text), originKind(r.Origin)); kind == promptHuman || kind == promptPeer {
+		if kind, _ := classifyClaudePrompt(strings.TrimSpace(text), originKind(r.Origin)); kind == promptHuman || kind == promptPeer || kind == promptPilothouse {
 			p.f.prompt(at)
 		}
 	}

@@ -97,6 +97,20 @@ func (f *fakeHerdr) run(_ context.Context, name string, args ...string) ([]byte,
 			group = 100
 		}
 		return []byte(`{"id":"cli:pane:process_info","result":{"process_info":{"foreground_process_group_id":` + strconv.Itoa(group) + `,"shell_pid":100}}}`), nil
+	case "agent list":
+		return []byte(`{"id":"cli:agent:list","result":{"type":"agent_list","agents":[
+			{"agent":"claude","agent_session":{"agent":"claude","kind":"id","value":"cc-harbor"},"tab_id":"w1:t3","workspace_id":"w1","terminal_title_stripped":"Go-live readiness"},
+			{"agent":"claude","agent_session":{"agent":"claude","kind":"id","value":"cc-orbit"},"tab_id":"w8:t1","workspace_id":"w8"},
+			{"agent":"claude","agent_session":{"agent":"claude","kind":"id","value":"cc-same"},"tab_id":"wF:t2","workspace_id":"wF"},
+			{"agent":"opencode","agent_session":{"agent":"opencode","kind":"id","value":"ses_erp"},"tab_id":"wF:t3","workspace_id":"wF"},
+			{"agent":"claude","tab_id":"wF:t4","workspace_id":"wF"}]}}`), nil
+	case "tab list":
+		return []byte(`{"id":"cli:tab:list","result":{"type":"tab_list","tabs":[
+			{"tab_id":"w1:t3","label":"Harbor","workspace_id":"w1"},
+			{"tab_id":"w8:t1","label":"1","workspace_id":"w8"},
+			{"tab_id":"wF:t2","label":"erp","workspace_id":"wF"},
+			{"tab_id":"wF:t3","label":"  claude\u0007   session ","workspace_id":"wF"},
+			{"tab_id":"wF:t4","label":"no id","workspace_id":"wF"}]}}`), nil
 	case "workspace focus":
 		return []byte(`{"id":"cli:workspace:focus","result":{}}`), nil
 	}
@@ -512,4 +526,44 @@ func hasPrefix(xs []string, p string) bool {
 		}
 	}
 	return false
+}
+
+func TestHerdrNames(t *testing.T) {
+	f := newFake()
+	o := newOpener(t, f, ModeAuto, "darwin")
+	got, err := o.HerdrNames(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"cc-harbor": "Halyard · Harbor",     // workspace · tab
+		"cc-orbit":  "PageMind",             // herdr's own tab number adds nothing
+		"cc-same":   "ERP",                  // nor a tab named like its workspace
+		"ses_erp":   "ERP · claude session", // control characters and extra spaces dropped
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("names = %q, want %q", got, want)
+	}
+
+	f.mu.Lock()
+	f.running = false
+	f.mu.Unlock()
+	if _, err := o.HerdrNames(context.Background()); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("herdr not running: %v", err)
+	}
+}
+
+func TestHerdrName(t *testing.T) {
+	long := strings.Repeat("x", 100)
+	for _, c := range [][3]string{
+		{"HarborNest", "UI HarborNest", "HarborNest · UI HarborNest"},
+		{"HarborNest", "12", "HarborNest"},
+		{"", "Tab", "Tab"},
+		{"", "", ""},
+		{"Ws", long, "Ws · " + strings.Repeat("x", maxName-len([]rune("Ws · "))-1) + "…"},
+	} {
+		if got := herdrName(c[0], c[1]); got != c[2] {
+			t.Errorf("herdrName(%q, %q) = %q, want %q", c[0], c[1], got, c[2])
+		}
+	}
 }

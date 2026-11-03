@@ -33,6 +33,12 @@ func (d *Daemon) startLoops() {
 			d.reloadPolicy()
 		}
 	})
+	if every := d.opts.HerdrNamesEvery; every >= 0 {
+		if every == 0 {
+			every = herdrNamesEvery
+		}
+		d.every(every, d.syncHerdrNames)
+	}
 	d.every(staleSweepInterval, d.sweepStale)
 	d.every(staleSweepInterval, func(ctx context.Context) { d.expireIdle(ctx, d.now()) })
 	d.goBackground(func() {

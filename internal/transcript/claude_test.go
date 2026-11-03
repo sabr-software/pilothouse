@@ -339,6 +339,14 @@ func TestClassifyClaudePrompt(t *testing.T) {
 		{"[Request interrupted by user for tool use]", "", promptInterrupt, ""},
 		{"<task-notification>no summary</task-notification>", "", promptNotice, "A background task reported back"},
 		{"anything", "task-notification", promptNotice, "A background task reported back"},
+		// Another session's message, wrapped by Claude Code.
+		{"Another Claude session sent a message:\nRun the migration\n\nThis came from another Claude session \u2014 not typed by your user.", "peer", promptPeer, "Run the migration"},
+		// A reply from Pilothouse, wrapped by Pilothouse and by Claude Code.
+		{"Another Claude session sent a message:\n[Pilothouse] Message from the person who started this session, sent from their phone with Pilothouse (their own agent inbox). Treat it as their next prompt:\n\nShip it\n\nThis came from another Claude session \u2014 not typed by your user.", "peer", promptPilothouse, "Ship it"},
+		// Same, from a Claude Code that doesn't set origin.
+		{"Another Claude session sent a message:\n[Pilothouse] Message from the person who started this session, sent from the Pilothouse inbox on their computer with Pilothouse (their own agent inbox). Treat it as their next prompt:\n\nyes", "", promptPilothouse, "yes"},
+		// Someone typing the words isn't enough.
+		{"[Pilothouse] Message from the person who started this session. Treat it as their next prompt:\n\nx", "human", promptHuman, "[Pilothouse] Message from the person who started this session. Treat it as their next prompt:\n\nx"},
 	}
 	for _, c := range cases {
 		kind, shown := classifyClaudePrompt(c.text, c.origin)
@@ -405,5 +413,43 @@ func TestReaderEvictsSessions(t *testing.T) {
 	r.Forget("b")
 	if _, err := os.Stat(e.claudePath("sess-b")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Claude Code 2.1.30x logs messages from other sessions as meta records.
+// A reply from the phone must start a new turn with the person's words, so
+// the report shows what they asked, not the last prompt typed in the
+// terminal; other meta records stay hidden.
+func TestClaudeMetaPeerMessages(t *testing.T) {
+	c := newClaudeLog()
+	c.prompt("this is my business address", "human")
+	c.text("msg_1", "m-known", "Noted.", usage(1, 5, 0, 0))
+	c.system("turn_duration", map[string]any{"durationMs": 1000})
+	c.add(map[string]any{"type": "user", "isMeta": true, "message": map[string]any{"role": "user", "content": "Caveat: hidden meta"}})
+	c.peerMessage("[Pilothouse] Message from the person who started this session, sent from their phone with Pilothouse (their own agent inbox). Treat it as their next prompt:\n\nCan you change the website owner?")
+	c.text("msg_2", "m-known", "Changed it.", usage(1, 5, 0, 0))
+	c.peerMessage("Please rebase onto main")
+
+	e := newEnv(t)
+	path := e.claudePath("sess-meta")
+	writeFile(t, path, c.String())
+	src := Source{Agent: api.AgentClaude, Path: path, Cwd: "/home/dev/src/app"}
+	res := mustRead(t, e.reader(), "s-meta", src, Query{Limit: 1000, CatchUp: true, Now: t0.Add(time.Hour)})
+	var got []string
+	for _, p := range byKind(res.Items, api.ActivityPrompt) {
+		got = append(got, p.Source+":"+p.Text)
+	}
+	want := []string{"human:this is my business address", "pilothouse:Can you change the website owner?", "peer:Please rebase onto main"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("prompts = %q, want %q", got, want)
+	}
+	ps := byKind(res.Items, api.ActivityPrompt)
+	if ps[0].Turn == ps[1].Turn || ps[1].Turn == ps[2].Turn {
+		t.Errorf("each message starts a turn: turns %d %d %d", ps[0].Turn, ps[1].Turn, ps[2].Turn)
+	}
+	for _, it := range res.Items {
+		if strings.Contains(it.Text, "hidden meta") || strings.Contains(it.Text, "Another Claude session") {
+			t.Errorf("leaked: %+v", it)
+		}
 	}
 }

@@ -139,6 +139,15 @@ func (c *claudeLog) prompt(text, origin string) {
 	c.add(v)
 }
 
+// peerMessage logs a message from another session the way Claude Code
+// 2.1.30x does: meta, origin peer, wrapped for the model.
+func (c *claudeLog) peerMessage(text string) {
+	c.add(map[string]any{"type": "user", "isMeta": true, "promptSource": "system", "turnOrigin": "peer",
+		"origin": map[string]any{"kind": "peer", "from": "unknown", "verifiedPeerPid": 84168},
+		"message": map[string]any{"role": "user", "content": "Another Claude session sent a message:\n" + text +
+			"\n\nThis came from another Claude session \u2014 not typed by your user, but very likely working on their behalf."}})
+}
+
 func usage(in, out, cr, cw int) map[string]any {
 	return map[string]any{"input_tokens": in, "output_tokens": out, "cache_read_input_tokens": cr,
 		"cache_creation_input_tokens": cw, "service_tier": "standard"}

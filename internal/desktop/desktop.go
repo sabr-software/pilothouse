@@ -617,3 +617,103 @@ func (o *Opener) initMaps() {
 		delete(o.tabs, id)
 	}
 }
+
+// ---- names ----
+
+// maxName caps a session name taken from herdr.
+const maxName = 80
+
+// HerdrNames maps an agent's own session id (Claude Code's, OpenCode's …)
+// to the name herdr shows for the tab it runs in, so Pilothouse can call
+// the session the same: "workspace · tab", or the workspace alone while
+// the tab still has herdr's default number. Errors wrap ErrUnavailable
+// when herdr isn't installed or running.
+func (o *Opener) HerdrNames(ctx context.Context) (map[string]string, error) {
+	res, err := o.herdr(ctx, "agent", "list")
+	if err != nil {
+		return nil, err
+	}
+	var al struct {
+		Agents []struct {
+			Session struct {
+				Value string `json:"value"`
+			} `json:"agent_session"`
+			Tab       string `json:"tab_id"`
+			Workspace string `json:"workspace_id"`
+		} `json:"agents"`
+	}
+	if err := json.Unmarshal(res, &al); err != nil {
+		return nil, fmt.Errorf("herdr agent list: %w", err)
+	}
+	if len(al.Agents) == 0 {
+		return map[string]string{}, nil
+	}
+	res, err = o.herdr(ctx, "tab", "list")
+	if err != nil {
+		return nil, err
+	}
+	var tl struct {
+		Tabs []struct {
+			ID    string `json:"tab_id"`
+			Label string `json:"label"`
+		} `json:"tabs"`
+	}
+	if err := json.Unmarshal(res, &tl); err != nil {
+		return nil, fmt.Errorf("herdr tab list: %w", err)
+	}
+	ws, err := o.herdrWorkspaces(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tabs := make(map[string]string, len(tl.Tabs))
+	for _, t := range tl.Tabs {
+		tabs[t.ID] = t.Label
+	}
+	wss := make(map[string]string, len(ws))
+	for _, w := range ws {
+		wss[w.ID] = w.Label
+	}
+	out := make(map[string]string, len(al.Agents))
+	for _, a := range al.Agents {
+		if a.Session.Value == "" {
+			continue
+		}
+		if n := herdrName(wss[a.Workspace], tabs[a.Tab]); n != "" {
+			out[a.Session.Value] = n
+		}
+	}
+	return out, nil
+}
+
+// herdrName is "workspace · tab". A tab herdr numbered itself ("1", "2"),
+// or one named like its workspace, adds nothing.
+func herdrName(workspace, tab string) string {
+	workspace, tab = cleanName(workspace), cleanName(tab)
+	switch {
+	case tab == "" || isNumber(tab) || strings.EqualFold(tab, workspace):
+		return workspace
+	case workspace == "":
+		return tab
+	}
+	return truncate(workspace+" · "+tab, maxName)
+}
+
+// cleanName drops control characters and collapses spaces.
+func cleanName(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) {
+			return ' '
+		}
+		return r
+	}, s)
+	return truncate(strings.Join(strings.Fields(s), " "), maxName)
+}
+
+func isNumber(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
+}

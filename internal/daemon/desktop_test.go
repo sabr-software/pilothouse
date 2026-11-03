@@ -203,3 +203,73 @@ func contains(xs []string, x string) bool {
 	}
 	return false
 }
+
+// Sessions running in herdr tabs take herdr's names, matched by the
+// agent's own session id; task sessions and sessions herdr doesn't run
+// keep theirs, and a rename isn't activity.
+func TestSyncHerdrNames(t *testing.T) {
+	h := newHarness(t)
+	o := desktop.New(desktop.ModeAuto, "", "", "/usr/local/bin/pilothouse", t.TempDir())
+	o.LookPath = func(string) (string, error) { return "/bin/herdr", nil }
+	var mu sync.Mutex
+	tab := "UI HarborNest"
+	o.Run = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch strings.Join(args[:2], " ") {
+		case "agent list":
+			return []byte(`{"result":{"agents":[{"agent_session":{"value":"cc-harbor"},"tab_id":"w6:t2","workspace_id":"w6"}]}}`), nil
+		case "tab list":
+			return []byte(`{"result":{"tabs":[{"tab_id":"w6:t2","label":"` + tab + `"}]}}`), nil
+		case "workspace list":
+			return []byte(`{"result":{"workspaces":[{"workspace_id":"w6","label":"HarborNest"}]}}`), nil
+		}
+		return []byte(`{"result":{}}`), nil
+	}
+	h.opts = func(opts *Options) { opts.Desktop = o }
+	h.start(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	h.hook(ctx, t, adapters.HookEvent{Kind: adapters.HookSessionStart, Cwd: dir, AgentSessionID: "cc-harbor"})
+	h.hook(ctx, t, adapters.HookEvent{Kind: adapters.HookSessionStart, Cwd: t.TempDir(), AgentSessionID: "cc-elsewhere"})
+	find := func(agentID string) api.Session {
+		ss, _ := h.c.Sessions(ctx)
+		for _, s := range ss {
+			if s.AgentSessionID == agentID {
+				return s
+			}
+		}
+		t.Fatalf("no session %s", agentID)
+		return api.Session{}
+	}
+	before := find("cc-harbor")
+	other := find("cc-elsewhere").Title
+
+	h.d.syncHerdrNames(ctx)
+	got := find("cc-harbor")
+	if got.Title != "HarborNest · UI HarborNest" {
+		t.Fatalf("title %q", got.Title)
+	}
+	if !got.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Errorf("a rename moved UpdatedAt: %v → %v", before.UpdatedAt, got.UpdatedAt)
+	}
+	if find("cc-elsewhere").Title != other {
+		t.Errorf("a session herdr doesn't run was renamed")
+	}
+
+	// Renaming the tab in herdr follows; nothing changed writes nothing.
+	mu.Lock()
+	tab = "Release"
+	mu.Unlock()
+	h.d.syncHerdrNames(ctx)
+	if got := find("cc-harbor").Title; got != "HarborNest · Release" {
+		t.Fatalf("after rename: %q", got)
+	}
+	seq := func() int64 { s, _ := h.c.Snapshot(ctx); return s.Seq }
+	n := seq()
+	h.d.syncHerdrNames(ctx)
+	if seq() != n {
+		t.Errorf("an unchanged name emitted an event")
+	}
+}

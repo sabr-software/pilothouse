@@ -81,6 +81,9 @@ type Options struct {
 	// PollInterval is the period of the presence, liveness and policy-reload
 	// loops. Zero means 2 s.
 	PollInterval time.Duration
+	// HerdrNamesEvery is how often session names are read from herdr
+	// (syncHerdrNames). Zero means 10 s; negative turns it off.
+	HerdrNamesEvery time.Duration
 	// DisableUpdateCheck turns off the daily update check regardless of config.
 	DisableUpdateCheck bool
 	// TaskStarter starts the agent of a task begun from a device;
