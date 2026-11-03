@@ -697,7 +697,9 @@ func TestLinkDeviceListVersions(t *testing.T) {
 	}
 	pe := peerStatusErr(resp).(*peerError)
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusConflict || pe.Code != "stale_devices" || pe.Version != cur {
+	// The hub's own send after the join may land meanwhile and move the
+	// version on, never back.
+	if resp.StatusCode != http.StatusConflict || pe.Code != "stale_devices" || pe.Version < cur {
 		t.Fatalf("stale answer: %d %+v (have %d)", resp.StatusCode, pe, cur)
 	}
 }
