@@ -40,9 +40,14 @@ export function pairView({ code, mode, name, onDone }) {
 
   async function redeem(c, name) {
     if (!self.PilothouseKeys) throw new Error('Keys unavailable');
-    const publicKey = await self.PilothouseKeys.create();
+    // Keep the current key until the computer has accepted the new one: a
+    // pairing that fails (a used or mistyped code, an old sign-in link)
+    // must not leave a signed-in browser with a key no one knows.
+    const rec = await self.PilothouseKeys.generate();
     persistStorage();
-    return api('POST', '/api/pair', { code: c, name, public_key: publicKey });
+    const me = await api('POST', '/api/pair', { code: c, name, public_key: rec.spki });
+    await self.PilothouseKeys.save(rec);
+    return me;
   }
 
   if (mode === 'login' && code) {

@@ -179,16 +179,21 @@ function renderAttention() {
   // A passkey can vouch for a new key right here; otherwise pair again.
   const canRestore = !!(store.me && store.me.device.passkey) && passkeySupported();
   const state = canRestore ? 'restore' : 'pair';
-  if (el.attention.dataset.state === state) return; // keep the button (and its prepared challenge)
-  el.attention.dataset.state = state;
+  const key = state + (store.keyMismatch ? ':mismatch' : '');
+  if (el.attention.dataset.state === key) return; // keep the button (and its prepared challenge)
+  el.attention.dataset.state = key;
   fill(el.attention,
     h('div', { class: 'attention-head' },
       h('span', { class: 'icon-tile amber', 'aria-hidden': 'true' }, icon('key')),
       h('div', null,
         h('h2', { id: 'attention-title' }, 'This device can’t answer yet'),
-        h('p', null, canRestore
-          ? 'Its signing key was cleared. Restore it with your passkey — Face ID or Touch ID.'
-          : 'Its signing key is missing, so approvals from here can’t be signed. Pair it again to fix this.'))),
+        h('p', null, store.keyMismatch
+          ? (canRestore
+            ? 'Its signing key doesn’t match the one your computer has for it, so approvals and replies from here are refused. Restore it with your passkey — Face ID or Touch ID.'
+            : 'Its signing key doesn’t match the one your computer has for it, so approvals and replies from here are refused. Pair it again to fix this.')
+          : canRestore
+            ? 'Its signing key was cleared. Restore it with your passkey — Face ID or Touch ID.'
+            : 'Its signing key is missing, so approvals from here can’t be signed. Pair it again to fix this.'))),
     canRestore
       ? restoreKeyButton('btn primary block big', () => {}, 'Restore with passkey')
       : link('/pair', { class: 'btn primary block big' }, 'Pair again'));

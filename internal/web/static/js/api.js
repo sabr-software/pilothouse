@@ -69,7 +69,8 @@ export const store = {
   presence: null,
   rulesRev: 0,
   conn: 'connecting', // live | connecting | offline
-  keyMissing: false, // signed in, but this browser lost the device key
+  keyMissing: false, // signed in, but this browser lost the device key (or has another one)
+  keyMismatch: false, // it has a key, but not the one the computer has for it
   loaded: false,
 };
 

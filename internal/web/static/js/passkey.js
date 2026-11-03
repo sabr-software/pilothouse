@@ -150,6 +150,8 @@ export function restoreKeyButton(cls, onDone = () => {}, label = 'Restore') {
     label, busy: 'Restoring…', cls, prep: restorePrep, run: restore,
     onDone: (me) => {
       store.keyMissing = false;
+      store.keyMismatch = false;
+      if (me && me.device && store.me) store.me = { ...store.me, device: me.device };
       refreshChrome();
       toast('Signing key restored', 'ok');
       onDone(me);

@@ -102,6 +102,27 @@ check('pair again replaced the device', newMe.device && newMe.device.id !== oldM
 check('key card gone after pairing again', await page3.$eval('.attention', (b) => b.hidden));
 check('this browser has a key again', await page3.evaluate(() => self.PilothouseKeys.load().then((r) => !!r)));
 
+// ---- A pairing that fails keeps the key that works ----
+const spki = () => page3.evaluate(() => self.PilothouseKeys.load().then((r) => r && r.spki));
+const keyBefore = await spki();
+await page3.evaluate(() => { history.pushState({ inApp: true }, '', '/pair'); dispatchEvent(new PopStateEvent('popstate')); });
+await page3.waitForSelector('#pair-code', { timeout: 5000 });
+await page3.type('#pair-code', 'AAAA-BBBB-CCCC');
+await page3.click('button[type=submit]');
+await page3.waitForFunction(() => (document.querySelector('.form-error') || {}).textContent, { timeout: 8000 }).catch(() => {});
+check('a failed pairing keeps the stored key', (await spki()) === keyBefore);
+const meNow = await page3.evaluate(() => fetch('/api/me').then((r) => r.json()));
+check('…which is still the device’s key on the computer', meNow.device.public_key === keyBefore);
+
+// ---- A key the computer doesn't have (left by older versions) shows the card ----
+await page3.evaluate(() => self.PilothouseKeys.generate().then((r) => self.PilothouseKeys.save(r)));
+await page3.goto(new URL('/', page3.url()).href, { waitUntil: 'domcontentloaded' });
+check('mismatched key: card says so', await waitText(page3, 'doesn’t match the one your computer has', 8000, '.attention'));
+check('mismatched key: card offers Pair again', await waitText(page3, 'Pair again', 3000, '.attention'));
+const refusedRes = await page3.evaluate(() => self.PilothouseKeys.postSigned('/api/passkeys', 'passkey', 'add', {}));
+check('a refused signature says how to fix it', refusedRes.data && refusedRes.data.code === 'bad_signature' && /Pair it again/.test(refusedRes.data.error), JSON.stringify(refusedRes.data));
+await shot(page3, '14-key-card-mismatch');
+
 // ---- IP-address URLs can't use passkeys ----
 const link2 = await (await fetch(demo.admin + '/v1/login-link', { method: 'POST' })).json();
 const page2 = await (await browser.createBrowserContext()).newPage();

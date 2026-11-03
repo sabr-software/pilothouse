@@ -56,8 +56,18 @@
     return tx('readonly', function (st) { return st.get(KEY); });
   }
 
-  function noKey() {
-    try { g.dispatchEvent(new g.Event('pilothouse:nokey')); } catch (e) { /* older browser */ }
+  function noKey(mismatch) {
+    try { g.dispatchEvent(new g.CustomEvent('pilothouse:nokey', { detail: { mismatch: !!mismatch } })); } catch (e) { /* older browser */ }
+  }
+
+  // The computer refused the signature: this browser's key isn't the one
+  // it has for the device. Say what fixes it, and show the pair prompt.
+  function refused(data) {
+    if (data && data.code === 'bad_signature') {
+      noKey(true);
+      data.error = 'This device’s key doesn’t match the one your computer has for it. Pair it again.';
+    }
+    return data;
   }
 
   /**
@@ -113,7 +123,7 @@
           body: JSON.stringify(body)
         }).then(function (res) {
           return res.json().catch(function () { return {}; }).then(function (data) {
-            return { ok: res.ok, status: res.status, data: data };
+            return { ok: res.ok, status: res.status, data: refused(data) };
           });
         });
       });
@@ -170,7 +180,7 @@
       }).then(function (res) {
         if (res.status === 204) return { ok: true, status: 204, data: null };
         return res.json().catch(function () { return {}; }).then(function (data) {
-          return { ok: res.ok, status: res.status, data: data };
+          return { ok: res.ok, status: res.status, data: refused(data) };
         });
       });
     }).catch(function (err) {

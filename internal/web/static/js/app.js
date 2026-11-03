@@ -51,6 +51,7 @@ const routes = [
 function repaired(me, wantsNotifications) {
   store.me = me;
   store.keyMissing = false;
+  store.keyMismatch = false;
   refreshChrome();
   navigate(wantsNotifications ? '/settings' : '/', true);
   connect();
@@ -135,7 +136,11 @@ async function startApp(me, path) {
 function watchKey() {
   if (!self.PilothouseKeys || !self.PilothouseKeys.load) return;
   self.PilothouseKeys.load().then((rec) => {
-    store.keyMissing = !rec;
+    // A key the computer doesn't have for this device (replaced by a
+    // pairing that didn't finish, in an older version) can't sign either.
+    const want = store.me && store.me.device && store.me.device.public_key;
+    store.keyMismatch = !!(rec && rec.spki && want && rec.spki !== want);
+    store.keyMissing = !rec || store.keyMismatch;
     refreshChrome();
   }).catch(() => {
     store.keyMissing = true;
@@ -143,8 +148,9 @@ function watchKey() {
   });
 }
 
-addEventListener('pilothouse:nokey', () => {
+addEventListener('pilothouse:nokey', (e) => {
   store.keyMissing = true;
+  if (e.detail && e.detail.mismatch) store.keyMismatch = true;
   refreshChrome();
 });
 

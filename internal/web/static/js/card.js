@@ -298,6 +298,7 @@ function errorText(res) {
   const d = res.data || {};
   if (d.code === 'stale_signature') return 'This device’s clock is off — fix the time and try again';
   if (d.code === 'no_key') return 'This device has no signing key — pair it again';
+  if (d.code === 'bad_signature') return 'This device’s key doesn’t match your computer’s — pair it again';
   if (res.status === 0) return 'Can’t reach your computer — try again';
   return d.error || 'Couldn’t send — try again';
 }
