@@ -371,6 +371,12 @@ func TestShimOversizedPayload(t *testing.T) {
 // TestShimForwardsLargePayload: a 5 MB payload (over the old 4 MB cap)
 // reaches the daemon for policy evaluation.
 func TestShimForwardsLargePayload(t *testing.T) {
+	// What's checked is that 5 MB gets through, not how fast: under -race
+	// with the whole suite running it can take longer than the 7 s budget
+	// (TestHookTimeout checks the budgets).
+	prev := shimDeadline
+	shimDeadline = func(adapters.Adapter, adapters.HookKind, int) time.Duration { return time.Minute }
+	t.Cleanup(func() { shimDeadline = prev })
 	env := hkEnv(t)
 	got := hkFakeDaemon(t, func(adapters.HookEnvelope) (adapters.HookResponse, time.Duration) {
 		return adapters.HookResponse{Stdout: `{"ok":true}`}, 0
@@ -386,7 +392,7 @@ func TestShimForwardsLargePayload(t *testing.T) {
 		if len(e.Payload) != len(payload) {
 			t.Fatalf("forwarded %d bytes, want %d", len(e.Payload), len(payload))
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("daemon never got the hook")
 	}
 }

@@ -376,7 +376,7 @@ func runShim(args []string, stdin io.Reader, stdout, stderr io.Writer) (code int
 	}
 	kind = ev.Kind
 
-	ctx, cancel := context.WithTimeout(context.Background(), hookTimeout(ad, kind, len(payload)))
+	ctx, cancel := context.WithTimeout(context.Background(), shimDeadline(ad, kind, len(payload)))
 	defer cancel()
 	resp, err := client.New().Hook(ctx, env)
 	if err != nil {
@@ -384,6 +384,10 @@ func runShim(args []string, stdin io.Reader, stdout, stderr io.Writer) (code int
 	}
 	return writeHookResponse(stdout, stderr, resp)
 }
+
+// shimDeadline is hookTimeout; a test that checks what arrives, not how
+// fast, replaces it.
+var shimDeadline = hookTimeout
 
 // hookTimeout: a permission hook may wait for a person up to the agent's
 // own hook timeout; everything else must answer in time for the agent.
