@@ -414,6 +414,7 @@ func openCodeTool(partID string, at time.Time, turn int, cwd string, p ocPart) a
 		} else {
 			it.Summary = "Run a command"
 		}
+		it.Note = toolNote(field("description"))
 	case "read":
 		it.ToolKind = api.ToolRead
 		it.Summary = "Read: " + ocPath(cwd, field("filePath", "path"), p.State.Title, "a file")

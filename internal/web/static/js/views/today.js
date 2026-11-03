@@ -21,8 +21,8 @@ import { requestCard, pruneCards, settling } from '../card.js';
 import { link, go, isWide, skeleton, emptyState } from '../ui.js';
 import { markdownTitle } from '../markdown.js';
 
-const WORKING = new Set(['working', 'unknown']);
-const DONE = new Set(['waiting', 'errored']);
+export const WORKING = new Set(['working', 'unknown']);
+export const DONE = new Set(['waiting', 'errored']);
 
 // Kept across visits to Today, like a scroll position.
 let openId = null; // the request open in place

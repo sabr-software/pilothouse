@@ -445,18 +445,22 @@ export function sessionView(id) {
   // ---- Reply ----
   const replyText = h('textarea', {
     // data-shortcut: the `r` key (palette.js) focuses this box.
-    class: 'input reply-input', id: 'reply-text', 'data-shortcut': 'reply', rows: 1, maxlength: 16384, autocomplete: 'off',
+    class: 'input reply-input', id: 'reply-text', name: 'message', 'data-shortcut': 'reply', rows: 1, maxlength: 16384, autocomplete: 'off',
     'aria-describedby': 'reply-note', enterkeyhint: 'send',
+    // Not a login: keep password managers from offering to fill it.
+    'data-1p-ignore': '', 'data-lpignore': 'true', 'data-bwignore': '', 'data-form-type': 'other',
   });
   const replyLabel = h('label', { class: 'sr-only', for: 'reply-text' }, 'Reply');
   const stopFirst = h('input', { type: 'checkbox', id: 'reply-stop' });
   const stopRow = h('label', { class: 'reply-stop', for: 'reply-stop' }, stopFirst, 'Stop the current step first');
-  const sendBtn = h('button', { class: 'btn primary reply-send', type: 'submit', 'aria-label': 'Send reply' }, ico('send', 'sm'), h('span', null, 'Send'));
+  const sendBtn = h('button', { class: 'btn primary reply-send', type: 'button', 'aria-label': 'Send reply' }, ico('send', 'sm'), h('span', null, 'Send'));
   const replyNote = h('p', { class: 'reply-note', id: 'reply-note' });
-  const replyForm = h('form', { class: 'card reply', novalidate: true },
+  // A div, not a <form>: password managers (iCloud Passwords in Chrome)
+  // offer logins on any form with a text box and a submit button.
+  const replyForm = h('div', { class: 'card reply', role: 'form', 'aria-label': 'Reply' },
     replyLabel, h('div', { class: 'reply-row' }, replyText, sendBtn), h('div', { class: 'reply-foot' }, stopRow, replyNote));
   let sending = false;
-  replyForm.addEventListener('submit', (e) => { e.preventDefault(); sendReply(); });
+  sendBtn.addEventListener('click', () => sendReply());
   replyText.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendReply(); }
   });
@@ -696,7 +700,7 @@ export function sessionView(id) {
       const group = reads;
       const key = 'r:' + group[0].id;
       nodes.push(node('read', searches ? 'search' : 'file', label, null, group.length > 1 ? key : null,
-        group.length > 1 ? group.map((it) => h('span', { class: 'raw' }, rawOf(it))) : [h('span', { class: 'raw' }, rawOf(group[0]))]));
+        group.map(stepLine)));
       reads = [];
     };
     for (const st of steps) {
@@ -705,7 +709,7 @@ export function sessionView(id) {
         const n = st.items.filter((x) => x.kind === 'tool').length;
         const running = st.items.some((x) => x.pending);
         const key = 'g:' + (st.head ? st.head.id : st.items[0].id);
-        const lines = st.items.filter((x) => x.kind === 'tool' || x.kind === 'text').map((x) => h('span', { class: 'raw' }, x.kind === 'text' ? oneLine(x.text, 140) : rawOf(x)));
+        const lines = st.items.filter((x) => x.kind === 'tool' || x.kind === 'text').map((x) => x.kind === 'text' ? h('span', { class: 'note' }, oneLine(prose(x.text), 140)) : stepLine(x));
         if (st.tail) lines.push(h('span', { class: 'sub' }, st.tail.summary || st.tail.text || 'Finished'));
         nodes.push(node('sub' + (running ? ' now' : ''), 'layers', 'Used a helper agent' + (st.head && (st.head.summary || st.head.text) ? ': ' + (st.head.summary || st.head.text) : ''),
           `${n} ${n === 1 ? 'step' : 'steps'}` + (running ? ' · running' : ''), key, lines, false, null, true));
@@ -715,9 +719,9 @@ export function sessionView(id) {
       if (it.kind === 'tool' && (it.tool_kind === 'read' || readShell(it)) && !it.is_error) { reads.push(it); continue; }
       flushReads();
       if (it.kind === 'tool') nodes.push(toolNode(it));
-      else if (it.kind === 'text' && it !== lastText) nodes.push(node('say', 'message', null, null, null, [h('q', { class: 'vq' }, oneLine(it.text, 200))]));
+      else if (it.kind === 'text' && it !== lastText) nodes.push(node('say', 'message', null, null, null, [h('q', { class: 'vq' }, oneLine(prose(it.text), 200))]));
       else if (it.kind === 'error') nodes.push(node('fail', 'alert', it.summary || 'Error', it.text ? oneLine(it.text, 160) : null));
-      else if (it.kind === 'prompt' && !it.sidechain) nodes.push(node('say', 'user', 'You said', oneLine(it.text, 160)));
+      else if (it.kind === 'prompt' && !it.sidechain) nodes.push(node('say', 'user', 'You said', oneLine(prose(it.text), 160)));
       else if (it.kind === 'system') nodes.push(node('sys', 'spark', it.text || it.summary || ''));
     }
     flushReads();
@@ -728,7 +732,9 @@ export function sessionView(id) {
       const took = receipt && receipt.since && toMs(receipt.since) ? Math.max(0, (toMs(s.updated_at) - toMs(receipt.since)) / 1000) : 0;
       nodes.push(node('end', 'anchor', s.state === 'exited' ? 'Session ended' : 'Finished', [took >= 60 ? fmtDuration(took) : null, u && u.cost_usd >= 0.01 ? '≈ ' + fmtUSD(u.cost_usd) : null].filter(Boolean).join(' · ') || null));
     }
-    return h('ol', { class: 'voyage' }, nodes);
+    // Newest first: what it's doing now (or how it ended) on top, the
+    // prompt that started the turn at the bottom.
+    return h('ol', { class: 'voyage' }, nodes.reverse());
   }
 
   function toolNode(it) {
@@ -744,11 +750,11 @@ export function sessionView(id) {
           : /(?:^|[\s;&|(])(?:(?:npm|pnpm|yarn|bun)(?:\s+run)?\s+build|go\s+build|cargo\s+build|vite\s+build|next\s+build)\b/.test(cmd) ? 'Build' : '';
       const commit = cmd.match(/\bgit\s+commit\b.*?-[a-zA-Z]*m\s*["']([^"'\n]+)/);
       if (denied) { cls = 'block'; ic = 'shieldOff'; const l = commandLabel(cmd); label = 'Blocked: ' + l[0].toLowerCase() + l.slice(1); }
-      else if (it.pending) { cls = 'now'; ic = 'hourglass'; label = kind ? `${kind} running` : commandLabel(cmd); }
+      else if (it.pending) { cls = 'now'; ic = 'hourglass'; label = kind ? `${kind} running` : it.note || commandLabel(cmd); }
       else if (kind) { cls = it.is_error ? 'fail' : 'ok'; ic = it.is_error ? 'x' : 'check'; label = it.is_error ? `${kind} failed` : `${kind} passed`; }
       else if (commit) { cls = 'ok'; ic = 'branch'; label = `Committed “${commit[1]}”`; }
       else if (/\bgit\s+push\b/.test(cmd)) { cls = it.is_error ? 'fail' : 'ok'; ic = 'upload'; label = it.is_error ? 'Push failed' : 'Pushed'; }
-      else { cls = it.is_error ? 'fail' : 'step'; ic = it.is_error ? 'x' : 'terminal'; label = it.is_error ? commandLabel(cmd) + ' failed' : commandLabel(cmd); }
+      else { cls = it.is_error ? 'fail' : 'step'; ic = it.is_error ? 'x' : 'terminal'; const l = it.note || commandLabel(cmd); label = it.is_error ? l + ' — failed' : l; }
     } else if (it.tool_kind === 'edit') {
       ic = 'pencil';
       const path = (it.summary || '').replace(/^(?:Edit|Write):?\s*/, '');
@@ -758,7 +764,12 @@ export function sessionView(id) {
     else if (it.tool_kind === 'mcp') { ic = 'plug'; label = 'Used ' + ((it.summary || '').replace(/^MCP\s+/, '').split(':')[0] || it.tool); }
     else { label = it.summary || it.tool || 'Used a tool'; }
     const sub = it.is_error && !denied && lastLine ? oneLine(lastLine, 140) : null;
-    return node(cls + ' k-' + (it.tool_kind || 'other') + (it.pending ? ' pending' : ''), ic, label, sub, it.result ? 'o:' + it.id : null, [h('span', { class: 'raw' }, raw)], it.pending, it.result);
+    // With the agent's own words as the label, the command itself shows
+    // only when the step is opened.
+    const words = it.tool_kind === 'shell' && !!it.note;
+    // A line that only repeats the label ("Use ListAgents") is left out.
+    const rawLine = raw && raw !== label ? [h('span', { class: 'raw' }, raw)] : null;
+    return node(cls + ' k-' + (it.tool_kind || 'other') + (it.pending ? ' pending' : ''), ic, label, sub, it.result ? 'o:' + it.id : null, rawLine, it.pending, it.result, words);
   }
 
   /** One voyage node; key makes it expandable (its raw lines, or the output). */
@@ -1069,6 +1080,21 @@ function isSearch(it) {
 
 function readShell(it) {
   return it.tool_kind === 'shell' && /^Run:\s*(?:cd\s+\S+\s*(?:&&|;)\s*)?(?:grep|rg|ag|find|fd|cat|head|tail|sed\s+-n|less|wc|ls|tree)\b/.test(it.summary || '');
+}
+
+/** A step's line: the agent's own words when it gave some (the command on hover), else the command. */
+function stepLine(it) {
+  return it.note ? h('span', { class: 'note', title: rawOf(it) }, it.note) : h('span', { class: 'raw' }, rawOf(it));
+}
+
+/** Markdown an agent writes, as plain words for one-line quotes. */
+function prose(t) {
+  return String(t || '')
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1').replace(/__([^_\n]+)__/g, '$1')
+    .replace(/(^|[\s(])[*_]([^*_\s][^*_\n]*?)[*_](?=[\s).,;:!?]|$)/g, '$1$2')
+    .replace(/`([^`\n]+)`/g, '$1')
+    .replace(/\[([^\]\n]+)\]\([^)\s]+\)/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '');
 }
 
 function rawOf(it) {

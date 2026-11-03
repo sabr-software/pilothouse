@@ -2,7 +2,7 @@
 // the needs-you queue on the right. Phones never render them.
 
 import { h, icon, toMs, ago, sync, fill, repoName, stateLabel, agentClass } from './dom.js';
-import { askTitle } from './views/today.js';
+import { askTitle, WORKING, DONE } from './views/today.js';
 import { store } from './api.js';
 import { panes, link, isWide } from './ui.js';
 import { requestCard, pruneCards, settling } from './card.js';
@@ -31,8 +31,6 @@ function queueCard(r) {
   return c.el;
 }
 
-const ORDER = { blocked: 0, working: 1, starting: 1, waiting: 2, errored: 2, unknown: 3, exited: 4 };
-
 let emptyQueue = null;
 
 /** Re-renders both panes for the current route. */
@@ -40,14 +38,29 @@ export function renderPanes(path) {
   if (!isWide() || !store.loaded) return;
   const p = panes();
 
-  const sessions = [...store.sessions.values()]
-    .sort((a, b) => (ORDER[a.state] ?? 3) - (ORDER[b.state] ?? 3) || toMs(b.updated_at) - toMs(a.updated_at));
+  // Grouped by status, in Today's words and order: needs you, working,
+  // finished (new since you looked), idle, then the last few that ended.
+  const sessions = [...store.sessions.values()].sort((a, b) => toMs(b.updated_at) - toMs(a.updated_at));
   const live = sessions.filter((s) => s.state !== 'exited');
-  const ended = sessions.filter((s) => s.state === 'exited').slice(0, 3);
+  const asking = new Set([...store.requests.values()]
+    .filter((r) => r.status === 'open' || r.status === 'stepped_aside').map((r) => r.session_id));
+  const need = live.filter((s) => asking.has(s.id) || s.state === 'blocked');
+  const working = live.filter((s) => !need.includes(s) && (WORKING.has(s.state) || s.state === 'starting'));
+  const finished = live.filter((s) => !need.includes(s) && DONE.has(s.state) && (s.unseen || s.state === 'errored'));
+  const grouped = new Set([...need, ...working, ...finished]);
+  const groups = [
+    ['need', 'Needs you', need],
+    ['work', 'Working', working],
+    ['fin', 'Finished', finished],
+    ['idle', 'Idle', live.filter((s) => !grouped.has(s))],
+    ['ended', 'Ended', sessions.filter((s) => s.state === 'exited').slice(0, 3)],
+  ].filter(([, , list]) => list.length);
   const current = (/^\/s\/([\w-]+)/.exec(path || '') || [])[1];
-  fill(p.sessions, [...live, ...ended].map((s) => link('/s/' + s.id, {
+  const row = (s) => link('/s/' + s.id, {
     class: 'side-session', 'aria-current': s.id === current ? 'page' : null, title: `${repoName(s)} — ${stateLabel(s)}`,
-  }, avatar(s), h('span', { class: 'txt' }, h('b', null, repoName(s), machineTag(s)), h('small', null, sessionLine(s))))),
+  }, avatar(s), h('span', { class: 'txt' }, h('b', null, repoName(s), machineTag(s)), h('small', null, sessionLine(s))));
+  fill(p.sessions, groups.map(([key, label, list]) => h('section', { class: 'side-group ' + key, 'aria-label': `${label}: ${list.length}` },
+    h('h3', { class: 'side-sub ' + key }, label, h('b', null, String(list.length))), list.map(row))),
   sessions.length ? null : h('p', { class: 'quiet' }, 'No sessions yet'));
 
   const open = [...store.requests.values()]

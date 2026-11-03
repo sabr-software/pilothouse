@@ -459,6 +459,9 @@ func TestClassifyClaudePrompt(t *testing.T) {
 		{"Another Claude session sent a message:\n[Pilothouse] Message from the person who started this session, sent from their phone with Pilothouse (their own agent inbox). Treat it as their next prompt:\n\nShip it\n\nThis came from another Claude session \u2014 not typed by your user.", "peer", promptPilothouse, "Ship it"},
 		// Same, from a Claude Code that doesn't set origin.
 		{"Another Claude session sent a message:\n[Pilothouse] Message from the person who started this session, sent from the Pilothouse inbox on their computer with Pilothouse (their own agent inbox). Treat it as their next prompt:\n\nyes", "", promptPilothouse, "yes"},
+		// Claude Code 2.1.316 tags the message inside the wrapper.
+		{"Another Claude session sent a message:\n<cross-session-message from=\"uds:/tmp/cc-socks/1.sock\" from-name=\"erp-ce\" from-mode=\"bypass\">\n5.2 done, go.\n</cross-session-message>\n\nThis came from another Claude session \u2014 not typed by your user.", "peer", promptPeer, "5.2 done, go."},
+		{"Another Claude session sent a message:\n<cross-session-message from=\"uds:/tmp/cc-socks/1.sock\" from-name=\"ph\">\n[Pilothouse] Message from the person who started this session, sent from their phone with Pilothouse (their own agent inbox). Treat it as their next prompt:\n\nShip it\n</cross-session-message>\n\nThis came from another Claude session.", "peer", promptPilothouse, "Ship it"},
 		// Someone typing the words isn't enough.
 		{"[Pilothouse] Message from the person who started this session. Treat it as their next prompt:\n\nx", "human", promptHuman, "[Pilothouse] Message from the person who started this session. Treat it as their next prompt:\n\nx"},
 	}
@@ -565,5 +568,29 @@ func TestClaudeMetaPeerMessages(t *testing.T) {
 		if strings.Contains(it.Text, "hidden meta") || strings.Contains(it.Text, "Another Claude session") {
 			t.Errorf("leaked: %+v", it)
 		}
+	}
+}
+
+// A shell call carries the agent's own description as its note, so the
+// report can say "Run tests" rather than the command.
+func TestClaudeToolNote(t *testing.T) {
+	e := newEnv(t)
+	path := e.claudePath("sess-1")
+	writeFile(t, path, claudeSession().String())
+	res := mustRead(t, e.reader(), "s1", Source{Agent: api.AgentClaude, Path: path, Cwd: "/home/dev/src/app"}, Query{Limit: 1000, CatchUp: true, Now: t0.Add(time.Hour)})
+	notes := map[string]string{}
+	for _, it := range res.Items {
+		if it.Kind == api.ActivityTool {
+			notes[it.ID] = it.Note
+		}
+	}
+	if notes["toolu_bash"] != "Run tests" {
+		t.Errorf("described Bash call: note %q", notes["toolu_bash"])
+	}
+	if notes["toolu_bash2"] != "" || notes["toolu_edit"] != "" {
+		t.Errorf("undescribed calls get no note: %q", notes)
+	}
+	if got := toolNote("  Show\n the   usage help  "); got != "Show the usage help" {
+		t.Errorf("toolNote = %q", got)
 	}
 }

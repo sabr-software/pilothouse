@@ -23,6 +23,17 @@ check('desktop: no tab bar', !(await visible('.tabbar')));
 check('desktop: the queue holds the four requests', (await page.$$('.queue .qcard')).length === 4);
 check('desktop: Today lists them as rows and doesn’t repeat the cards', (await page.$$('main .g-need .nrow')).length === 4 && (await page.$$('main article.req')).length === 0);
 check('desktop: sidebar lists sessions', (await page.$$('.sidebar .side-session')).length >= 8);
+const sideGroups = await page.$$eval('.sidebar .side-group', (gs) => gs.map((g) => ({
+  key: [...g.classList].find((c) => c !== 'side-group'),
+  label: g.querySelector('.side-sub').firstChild.textContent,
+  n: +g.querySelector('.side-sub b').textContent,
+  rows: g.querySelectorAll('.side-session').length,
+})));
+const order = ['need', 'work', 'fin', 'idle', 'ended'];
+check('desktop: sidebar groups sessions by status, in Today’s order', sideGroups.length >= 3 &&
+  sideGroups.every((g, i) => i === 0 || order.indexOf(g.key) > order.indexOf(sideGroups[i - 1].key)), JSON.stringify(sideGroups));
+check('desktop: each sidebar group counts its rows', sideGroups.every((g) => g.n === g.rows && g.rows > 0));
+check('desktop: sidebar “Needs you” holds the sessions with the four requests', (sideGroups.find((g) => g.key === 'need') || {}).rows === 4, JSON.stringify(sideGroups));
 await page.setViewport(PHONE);
 await sleep(200);
 check('phone: tab bar with three tabs (Today, Rules, Settings), no side panes', await visible('.tabbar') && (await page.$$eval('.tabbar .tab', (t) => t.map((x) => x.innerText.replace(/\d+/g, '').trim()).join(','))) === 'Today,Rules,Settings' && !(await visible('.sidebar')) && !(await visible('.queue')));

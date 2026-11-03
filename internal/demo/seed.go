@@ -34,6 +34,9 @@ func run(tool, cmd, result string, isErr bool) api.ActivityItem {
 	return api.ActivityItem{Kind: api.ActivityTool, Tool: tool, ToolKind: api.ToolShell, Summary: "Run: " + cmd, Result: result, IsError: isErr}
 }
 
+// said gives a step the agent's own description, as Claude Code writes one.
+func said(it api.ActivityItem, note string) api.ActivityItem { it.Note = note; return it }
+
 func read(tool, p, result string) api.ActivityItem {
 	return api.ActivityItem{Kind: api.ActivityTool, Tool: tool, ToolKind: api.ToolRead, Summary: "Read " + p, Result: result}
 }
@@ -170,9 +173,10 @@ func (c *Core) seed() {
 	item(inf, 35*m+30*time.Second, search("nodejs18.x", "Found 3 files\nterraform/staging/main.tf\nterraform/prod/main.tf\n.github/workflows/deploy.yml"))
 	item(inf, 35*m, read("Read", "terraform/staging/main.tf", "Read 88 lines"))
 	item(inf, 33*m, edit("Edit", "terraform/staging/main.tf", 2, 2), fileEdit("terraform/staging/main.tf", 2, 2))
+	item(inf, 32*m, say("Staging is on **Node 22**; next the `deploy.yml` workflow."))
 	item(inf, 31*m, edit("Edit", ".github/workflows/deploy.yml", 1, 1), fileEdit(".github/workflows/deploy.yml", 1, 1))
-	item(inf, 29*m, run("Bash", "terraform fmt -check -recursive", "(no changes)", false))
-	item(inf, 27*m, run("Bash", "terraform -chdir=terraform/staging validate", "Success! The configuration is valid.", false))
+	item(inf, 29*m, said(run("Bash", "terraform fmt -check -recursive", "(no changes)", false), "Check the Terraform formatting"))
+	item(inf, 27*m, said(run("Bash", "terraform -chdir=terraform/staging validate", "Success! The configuration is valid.", false), "Validate the staging configuration"))
 	item(inf, 26*m, read("Read", "terraform/prod/main.tf", "Read 112 lines"))
 	item(inf, 40*time.Second, say("Staging and the workflow are on Node 22. Production needs your OK — protect-prod asks before any change under terraform/prod."))
 	request(25*time.Second, api.Request{ID: "r_tfedit04", SessionID: inf, Checkpoint: api.CheckpointPermission, Tool: "MultiEdit", ToolKind: api.ToolEdit,
@@ -245,10 +249,10 @@ func (c *Core) seed() {
 		Cwd: src + "api-server", RepoRoot: src + "api-server", Branch: "perf/lru-cache", StartedAt: ago(14 * m), Caps: wrappedCaps})
 	item(as, 14*m, prompt("The LRU cache allocates on every Get. Make Get allocation-free and prove it with a benchmark.", "human"))
 	item(as, 13*m+30*time.Second, read("Read", "internal/cache/lru.go", "Read 203 lines"))
-	item(as, 12*m+48*time.Second, run("Bash", "go test -run=^$ -bench=Get -benchmem ./internal/cache", "BenchmarkGet-12    38214562    31.2 ns/op    16 B/op    1 allocs/op\nok  \tgithub.com/dev/api-server/internal/cache\t1.540s", false))
+	item(as, 12*m+48*time.Second, said(run("Bash", "go test -run=^$ -bench=Get -benchmem ./internal/cache", "BenchmarkGet-12    38214562    31.2 ns/op    16 B/op    1 allocs/op\nok  \tgithub.com/dev/api-server/internal/cache\t1.540s", false), "Benchmark the cache lookups"))
 	item(as, 11*m, say("Get boxes the key into an interface for the list element. Storing entries in a slice with index links removes that allocation."))
 	item(as, 8*m, edit("Edit", "internal/cache/lru.go", 22, 17), fileEdit("internal/cache/lru.go", 22, 17))
-	item(as, 6*m, run("Bash", "go test -run=^$ -bench=Get -benchmem ./internal/cache", "BenchmarkGet-12    63485220    18.9 ns/op    0 B/op    0 allocs/op\nok  \tgithub.com/dev/api-server/internal/cache\t1.402s", false))
+	item(as, 6*m, said(run("Bash", "go test -run=^$ -bench=Get -benchmem ./internal/cache", "BenchmarkGet-12    63485220    18.9 ns/op    0 B/op    0 allocs/op\nok  \tgithub.com/dev/api-server/internal/cache\t1.402s", false), "Benchmark the cache again"))
 	item(as, 4*m, say("Get is allocation-free now: 31.2 → 18.9 ns/op, 0 allocs. Running the whole suite."))
 	item(as, 42*time.Second, api.ActivityItem{Kind: api.ActivityTool, Tool: "Bash", ToolKind: api.ToolShell, Summary: "Run: go test -race ./...", Pending: true})
 	state(as, 40*time.Second, func(s *api.Session) { s.StateDetail = "Running: go test -race ./..." })

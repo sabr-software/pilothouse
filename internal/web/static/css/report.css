@@ -109,6 +109,7 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 .vs.block .vt2 b { color: var(--deny-text); } .vs.fail .vt2 b { color: var(--warn-text); }
 .vt2 .sub { display: block; margin-top: 1px; font-size: 12.5px; color: var(--text-3); }
 .vt2 .raw { margin-top: 3px; }
+.view.rep .vt2 .note { display: block; margin-top: 3px; font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vt2 .out { margin-left: 0; }
 .vt2 .vq { display: block; font: italic 15px/1.45 var(--serif); color: var(--text-2); }
 .view.rep .vbtn { display: block; width: 100%; min-height: 44px; margin: -6px 0 0; padding: 6px 0 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; }

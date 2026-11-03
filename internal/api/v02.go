@@ -199,19 +199,23 @@ const (
 
 // ActivityItem is one entry in a session's activity feed.
 type ActivityItem struct {
-	ID        string       `json:"id"` // stable across reads (record uuid / call id)
-	Kind      ActivityKind `json:"kind"`
-	At        time.Time    `json:"at"`
-	Turn      int          `json:"turn"`           // 1-based: increments at each prompt
-	Text      string       `json:"text,omitempty"` // capped
-	Tool      string       `json:"tool,omitempty"`
-	ToolKind  ToolKind     `json:"tool_kind,omitempty"`
-	Summary   string       `json:"summary,omitempty"` // "Run: npm test", "Edit internal/x.go"
-	Result    string       `json:"result,omitempty"`  // tail of the tool output, capped
-	IsError   bool         `json:"is_error,omitempty"`
-	Source    string       `json:"source,omitempty"` // prompts: "human" | "pilothouse" | "peer"
-	Sidechain bool         `json:"sidechain,omitempty"`
-	Pending   bool         `json:"pending,omitempty"` // tool call without a result yet
+	ID       string       `json:"id"` // stable across reads (record uuid / call id)
+	Kind     ActivityKind `json:"kind"`
+	At       time.Time    `json:"at"`
+	Turn     int          `json:"turn"`           // 1-based: increments at each prompt
+	Text     string       `json:"text,omitempty"` // capped
+	Tool     string       `json:"tool,omitempty"`
+	ToolKind ToolKind     `json:"tool_kind,omitempty"`
+	Summary  string       `json:"summary,omitempty"` // "Run: npm test", "Edit internal/x.go"
+	// Note is the agent's own plain-words line for a tool call, when it
+	// wrote one ("Run the web tests"): Claude Code's and OpenCode's
+	// shell description.
+	Note      string `json:"note,omitempty"`
+	Result    string `json:"result,omitempty"` // tail of the tool output, capped
+	IsError   bool   `json:"is_error,omitempty"`
+	Source    string `json:"source,omitempty"` // prompts: "human" | "pilothouse" | "peer"
+	Sidechain bool   `json:"sidechain,omitempty"`
+	Pending   bool   `json:"pending,omitempty"` // tool call without a result yet
 }
 
 // FileChange is a file a session touched.

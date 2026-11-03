@@ -279,7 +279,7 @@ func classifyClaudePrompt(text, origin string) (promptKind, string) {
 	case strings.HasPrefix(text, "<local-command-"), strings.HasPrefix(text, "<bash-std"),
 		strings.HasPrefix(text, "<system-reminder>"), strings.HasPrefix(text, "<command-message>"):
 		return promptSkip, ""
-	case origin == "peer" || strings.HasPrefix(text, peerHead):
+	case origin == "peer" || strings.HasPrefix(text, peerHead) || strings.HasPrefix(text, peerTagOpen):
 		text = unwrapPeer(text)
 		if msg, ok := UnwrapPilothouse(text); ok {
 			return promptPilothouse, msg
@@ -295,17 +295,31 @@ func classifyClaudePrompt(text, origin string) (promptKind, string) {
 const (
 	peerHead = "Another Claude session sent a message:\n"
 	peerTail = "\n\nThis came from another Claude session"
+
+	peerTagOpen  = "<cross-session-message"
+	peerTagClose = "</cross-session-message>"
 )
 
 func unwrapPeer(text string) string {
-	if !strings.HasPrefix(text, peerHead) {
-		return text
+	if strings.HasPrefix(text, peerHead) {
+		text = text[len(peerHead):]
+		if i := strings.LastIndex(text, peerTail); i >= 0 {
+			text = text[:i]
+		}
+		text = strings.TrimSpace(text)
 	}
-	text = text[len(peerHead):]
-	if i := strings.LastIndex(text, peerTail); i >= 0 {
-		text = text[:i]
+	// Claude Code 2.1.316 also tags the message itself:
+	// <cross-session-message from="…" from-name="…">body</cross-session-message>
+	if strings.HasPrefix(text, peerTagOpen) {
+		if i := strings.Index(text, ">"); i >= 0 {
+			text = text[i+1:]
+		}
+		if j := strings.LastIndex(text, peerTagClose); j >= 0 {
+			text = text[:j]
+		}
+		text = strings.TrimSpace(text)
 	}
-	return strings.TrimSpace(text)
+	return text
 }
 
 // PilothouseHead and PilothouseLead frame the text of a reply Pilothouse
@@ -513,6 +527,13 @@ func (p *claudeParser) toolUse(b claudeBlock, at time.Time, chain string, side b
 	d := describe(api.AgentClaude, b.Name, b.Input, p.f.cwd)
 	it := p.newItem(b.ID, api.ActivityTool, at, chain, side)
 	it.Tool, it.ToolKind, it.Summary, it.command, it.Pending = b.Name, d.kind, d.summary, d.command, true
+	if b.Name == "Bash" {
+		var in struct {
+			Description string `json:"description"`
+		}
+		_ = json.Unmarshal(b.Input, &in)
+		it.Note = toolNote(in.Description)
+	}
 	switch b.Name {
 	case "Agent", "Task":
 		it.Kind = api.ActivitySubagent

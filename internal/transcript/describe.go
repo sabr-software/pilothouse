@@ -76,3 +76,13 @@ func testRunner(command string) string {
 	}
 	return strings.Join(strings.Fields(m[1]), " ")
 }
+
+// toolNote is an agent's one-line description of a tool call, tidied for
+// the activity feed: one line, capped.
+func toolNote(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > 160 {
+		s = string(r[:159]) + "…"
+	}
+	return s
+}

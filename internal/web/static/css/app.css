@@ -1123,6 +1123,14 @@ dialog::backdrop { background: var(--scrim); }
 .nav-item .badge { box-shadow: none; }
 .side-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 10px 6px; color: var(--text-3); font-size: var(--fs-xs); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
 .side-sessions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; }
+.side-group { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; }
+.side-sub { display: flex; align-items: baseline; gap: 6px; margin: 0; padding: 12px 10px 4px; font: 700 10.5px var(--font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); }
+.side-group:first-child .side-sub { padding-top: 2px; }
+.side-sub b { font: 700 10.5px var(--mono); letter-spacing: 0; color: var(--text-2); background: var(--muted-soft); border-radius: 99px; padding: 0 6px; }
+.side-sub.need { color: var(--warn-text); }
+.side-sub.need b { background: var(--warn-soft); color: var(--warn-text); }
+.side-sub.work { color: var(--info-text); }
+.side-sub.fin { color: var(--brand-text); }
 .side-session { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 8px; border-radius: 10px; color: var(--text); }
 .side-session:hover { background: var(--muted-soft); }
 .side-session[aria-current="page"] { background: var(--surface); box-shadow: var(--shadow); }
