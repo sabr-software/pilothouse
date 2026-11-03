@@ -63,11 +63,28 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 .view.rep .lbl.work { color: var(--info-text); }
 .view.rep .lbl .n-add { color: var(--diff-add-strong); letter-spacing: 0; font-family: var(--mono); }
 .view.rep .lbl .n-del { color: var(--diff-del-strong); letter-spacing: 0; font-family: var(--mono); margin-left: 4px; }
-.goalq { position: relative; margin: 0; padding-left: 22px; font: italic 500 21px/1.35 var(--serif); letter-spacing: -0.01em; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
-.goalq::before { content: "“"; position: absolute; left: -2px; top: -8px; font: 600 46px var(--serif); color: var(--surface-3); }
+/* The exchange: what you asked and what the agent says, as two messages.
+   Yours is a plain card; the agent's is tinted in its colour with an edge
+   of it, so the two never read as one block. */
+.exch { display: grid; gap: 10px; margin-top: 22px; }
+.xmsg.generic { --agent: var(--generic); }
+.xmsg { --card: var(--surface); min-width: 0; padding: 12px 16px 14px; border-radius: 16px; background: var(--card); }
+.xmsg.you { border-top-left-radius: 6px; box-shadow: inset 0 0 0 1px var(--border-strong); }
+.xmsg.said { --card: color-mix(in srgb, var(--agent) 7%, var(--surface)); border-top-left-radius: 6px; box-shadow: inset 3px 0 0 var(--agent), inset 0 0 0 1px color-mix(in srgb, var(--agent) 24%, transparent); }
+.xwho { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; min-width: 0; }
+.xwho h2 { margin: 0; font: 800 11px var(--font); letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-2); white-space: nowrap; }
+.xwho span:not(.xav) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--text-3); }
+.xwho time { margin-left: auto; font: 12px var(--mono); color: var(--text-3); white-space: nowrap; }
+.xav { flex: none; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; font: 760 10.5px var(--font); letter-spacing: 0.02em; }
+.xav svg.ic { width: 13px; height: 13px; }
+.xmsg.you .xav { background: var(--text); color: var(--bg); }
+.xmsg.you.peer .xav { background: var(--muted-soft); color: var(--text-2); }
+.xmsg.said .xav { color: color-mix(in srgb, var(--agent) var(--agent-mix), #000); background: color-mix(in srgb, var(--agent) 18%, var(--surface)); }
+.xmsg.said .xwho h2 { color: color-mix(in srgb, var(--agent) var(--agent-mix), #000); }
+.goalq { margin: 0; font: italic 500 19px/1.4 var(--serif); letter-spacing: -0.01em; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
 .md.says { font-size: 15.5px; line-height: 1.55; color: var(--text); position: relative; overflow-wrap: anywhere; }
 .md.says.clamp { max-height: 220px; overflow: hidden; }
-.md.says.clamp::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 56px; background: linear-gradient(transparent, var(--bg)); }
+.md.says.clamp::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 56px; background: linear-gradient(transparent, var(--card, var(--bg))); }
 .readall { margin-top: 6px; min-height: 44px; padding: 0; border: 0; background: none; font: 650 14px var(--font); color: var(--brand-text); }
 .stamps { display: flex; align-items: center; gap: 16px; margin: 4px 0; }
 .stampnote { margin: 0; font: italic 13.5px/1.45 var(--serif); color: var(--text-3); }

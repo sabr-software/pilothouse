@@ -7,7 +7,7 @@
 // Also exports the small helpers the other 0.2 views share (signed
 // actions, number formatting, extra icons), so they need no new modules.
 
-import { h, icon, inkStamp, agentName, repoName, stateLabel, agoLong, clock, relPath, fill, add, toMs } from '../dom.js';
+import { h, icon, inkStamp, agentName, agentInitials, agentClass, repoName, stateLabel, agoLong, clock, relPath, fill, add, toMs } from '../dom.js';
 import { store, api, onEvent, onOtherMachine } from '../api.js';
 import { requestCard } from '../card.js';
 import { renderMarkdown } from '../markdown.js';
@@ -393,19 +393,30 @@ export function sessionView(id) {
     if (reportKey) catchEl.classList.add('settled'); // later rebuilds don't animate
     reportKey = sig;
     const parts = [];
+    // The exchange: what was asked and the agent's last words, as two
+    // messages, each with who and when.
+    const who = (av, label, extra, at) => h('div', { class: 'xwho' }, av, h('h2', null, label), extra ? h('span', null, extra) : null,
+      at ? h('time', { datetime: at }, clock(at)) : null);
+    const exch = [];
     const asked = t.prompts.length ? t.prompts[t.prompts.length - 1] : null;
     if (asked && asked.text) {
-      parts.push(h('h2', { class: 'lbl' }, asked.source === 'pilothouse' ? 'You asked · from Pilothouse' : asked.source === 'peer' ? 'Another agent asked' : 'You asked'),
-        h('blockquote', { class: 'goalq' }, asked.text));
+      const peer = asked.source === 'peer';
+      exch.push(h('div', { class: 'xmsg you' + (peer ? ' peer' : '') },
+        who(h('span', { class: 'xav', 'aria-hidden': 'true' }, icon(peer ? 'layers' : 'user', 'sm')), peer ? 'Another agent asked' : 'You asked',
+          asked.source === 'pilothouse' ? 'from Pilothouse' : null, asked.at),
+        h('blockquote', { class: 'goalq' }, asked.text)));
     }
     const said = [...t.steps].reverse().find((it) => it.kind === 'text' && !it.sidechain && it.text);
     if (said) {
+      const agent = s ? s.agent : '';
       const md = renderMarkdown(said.text, { baseLevel: 3 });
       const long = said.text.length > 420 || said.text.split('\n').length > 8;
-      parts.push(h('h2', { class: 'lbl' }, `${agentName(s ? s.agent : '')} says`),
+      exch.push(h('div', { class: 'xmsg said ' + agentClass(agent) },
+        who(h('span', { class: 'xav', 'aria-hidden': 'true' }, agentInitials(agent)), `${agentName(agent)} says`, null, said.at),
         h('div', { class: 'md says' + (long && !saysOpen ? ' clamp' : '') }, md),
-        long ? h('button', { class: 'readall', type: 'button', 'aria-expanded': String(saysOpen), onclick: () => { saysOpen = !saysOpen; reportKey = ''; renderReport(); } }, saysOpen ? 'Show less' : 'Read all') : null);
+        long ? h('button', { class: 'readall', type: 'button', 'aria-expanded': String(saysOpen), onclick: () => { saysOpen = !saysOpen; reportKey = ''; renderReport(); } }, saysOpen ? 'Show less' : 'Read all') : null));
     }
+    if (exch.length) parts.push(h('section', { class: 'exch', 'aria-label': 'Latest exchange' }, exch));
     const rc = receipt;
     if (rc && (rc.tests || rc.lint || rc.build || rc.edits)) {
       const checks = [['tests', 'Tests'], ['lint', 'Lint'], ['build', 'Build']].filter(([k]) => rc[k]);
