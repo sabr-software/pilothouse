@@ -319,7 +319,10 @@ const (
 )
 
 // shimEnv is the environment allow-list forwarded to the daemon.
-var shimEnv = []string{"TERM_PROGRAM", "TMUX", "PILOTHOUSE_SESSION_ID", "PILOTHOUSE_TASK_ID", "SSH_CONNECTION"}
+// XPC_SERVICE_NAME (macOS) names the launchd job a process runs under;
+// INVOCATION_ID (Linux) is set for systemd services: they tell a scheduled
+// background run from one a person started.
+var shimEnv = []string{"TERM_PROGRAM", "TMUX", "PILOTHOUSE_SESSION_ID", "PILOTHOUSE_TASK_ID", "SSH_CONNECTION", "XPC_SERVICE_NAME", "INVOCATION_ID"}
 
 // newHookShimCmd is what agents run on every hook: `pilothouse hook <agent>
 // [event]`. It must never hang, never print anything but the agent's

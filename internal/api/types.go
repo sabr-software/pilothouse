@@ -65,11 +65,17 @@ const (
 
 // Session is one running (or finished) agent conversation.
 type Session struct {
-	ID             string     `json:"id"`
-	Agent          AgentKind  `json:"agent"`
-	Mode           Mode       `json:"mode"`
-	Machine        string     `json:"machine"`
-	Title          string     `json:"title"` // repo/dir name or --name
+	ID      string    `json:"id"`
+	Agent   AgentKind `json:"agent"`
+	Mode    Mode      `json:"mode"`
+	Machine string    `json:"machine"`
+	Title   string    `json:"title"` // repo/dir name or --name
+	// Background marks a run with no one at a terminal: a print-mode or
+	// exec run (claude -p, codex exec, opencode run), or one started by a
+	// scheduler. LaunchedBy says what started it, in a few words:
+	// "relay-bridge.sh, from launchd job com.relay.evening".
+	Background     bool       `json:"background,omitempty"`
+	LaunchedBy     string     `json:"launched_by,omitempty"`
 	Cwd            string     `json:"cwd"`
 	RepoRoot       string     `json:"repo_root,omitempty"`
 	Branch         string     `json:"branch,omitempty"`

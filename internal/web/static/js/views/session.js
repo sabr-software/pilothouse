@@ -272,7 +272,8 @@ export function sessionView(id) {
     }
     const u = usage || s.usage;
     const took = receipt && receipt.since && toMs(receipt.since) ? Math.max(0, (toMs(s.updated_at) - toMs(receipt.since)) / 1000) : 0;
-    const meta = [onOtherMachine(s) ? 'on ' + s.machine : null, agentName(s.agent), statusWords(s), took >= 60 ? fmtDuration(took) : null, u && u.cost_usd >= 0.01 ? '≈ ' + fmtUSD(u.cost_usd) : null].filter(Boolean);
+    const meta = [onOtherMachine(s) ? 'on ' + s.machine : null, agentName(s.agent),
+      s.background ? 'background run' + (s.launched_by ? ', started by ' + s.launched_by : '') : null, statusWords(s), took >= 60 ? fmtDuration(took) : null, u && u.cost_usd >= 0.01 ? '≈ ' + fmtUSD(u.cost_usd) : null].filter(Boolean);
     fill(headEl,
       h('h1', { class: 'page-title rk' }, h('span', { class: 'ag ' + s.agent, 'aria-hidden': 'true' }), h('b', null, repoName(s)),
         s.branch ? h('span', { class: 'br' }, ' · ' + s.branch) : null),

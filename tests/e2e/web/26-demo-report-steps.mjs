@@ -2,7 +2,7 @@
 // newest step first and the turn's first step at the bottom; a shell step the agent
 // described reads in its words, its command shown only when opened; a
 // line that would repeat the label is left out; markdown in the agent's
-// narration reads as plain words.
+// narration reads as plain words; a background run is labelled as one.
 //   node 26-demo-report-steps.mjs
 import { startDemo, login, goto, check, summary, sleep, scheme, shot, DESKTOP } from './demo-lib.mjs';
 
@@ -34,6 +34,19 @@ await sleep(400);
 list = await steps();
 const fmt = list.find((x) => x.includes('Check the Terraform formatting')) || '';
 check('opened, the step shows its command and output', fmt.includes('terraform fmt -check -recursive') && fmt.includes('(no changes)'), fmt);
+
+// ---- A background run is labelled as one ----
+const sideBg = await page.$$eval('.sidebar .side-session', (rs) => rs.filter((r) => r.querySelector('.mtag.bg')).map((r) => r.querySelector('b').firstChild.textContent));
+check('the sidebar tags the background run', sideBg.length === 1 && sideBg[0] === 'site', JSON.stringify(sideBg));
+const bgTitle = await page.$eval('.sidebar .side-session .mtag.bg', (t) => t.title);
+check('…and says what started it on hover', bgTitle.includes('nightly-build.sh, from launchd job dev.site.nightly'), bgTitle);
+await goto(page, demo, '/s/s_site000002');
+await page.waitForSelector('.rmeta', { timeout: 10000 });
+const meta = await page.$eval('.rmeta', (m) => m.textContent);
+check('its report says it’s a background run and who started it', meta.includes('background run, started by nightly-build.sh, from launchd job dev.site.nightly'), meta);
+await goto(page, demo, '/');
+await sleep(400);
+check('Today tags it too', await page.$$eval('main .mtag.bg', (ts) => ts.length >= 1));
 
 await demo.stop();
 process.exit(summary() ? 1 : 0);

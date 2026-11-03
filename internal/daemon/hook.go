@@ -541,6 +541,9 @@ func applyHook(s *api.Session, h *hookCall, now time.Time) {
 	if ev.AgentSessionID != "" {
 		s.AgentSessionID = ev.AgentSessionID
 	}
+	if !s.Background && s.Mode != api.ModeWrapped {
+		s.Background, s.LaunchedBy = backgroundRun(h.env.Agent, h.agentPID, h.env)
+	}
 	if ev.TranscriptPath != "" {
 		s.TranscriptPath = ev.TranscriptPath
 	}

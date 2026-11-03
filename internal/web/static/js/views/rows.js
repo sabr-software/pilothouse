@@ -53,7 +53,14 @@ export function sessionRow(s) {
  * are in view (this machine's sessions stay unlabelled).
  */
 export function machineTag(s, hideIf = '') {
-  if (!multiMachine() || !s || !s.machine || s.machine === hideIf || s.machine === store.machine) return null;
+  const bg = bgTag(s);
+  if (!multiMachine() || !s || !s.machine || s.machine === hideIf || s.machine === store.machine) return bg;
   const m = machineInfo(s.machine);
-  return h('span', { class: 'mtag' + (m && !m.online ? ' off' : ''), title: m && !m.online ? `${s.machine} is offline` : `On ${s.machine}` }, s.machine);
+  return [h('span', { class: 'mtag' + (m && !m.online ? ' off' : ''), title: m && !m.online ? `${s.machine} is offline` : `On ${s.machine}` }, s.machine), bg];
+}
+
+/** "background" on a run no one watches at a terminal (claude -p from a script or a launchd job). */
+export function bgTag(s) {
+  if (!s || !s.background) return null;
+  return h('span', { class: 'mtag bg', title: 'Background run, no terminal' + (s.launched_by ? ` — started by ${s.launched_by}` : '') }, 'background');
 }

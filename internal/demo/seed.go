@@ -231,6 +231,7 @@ func (c *Core) seed() {
 	// ---- site: Codex (observed), working on its own ----
 	st := "s_site000002"
 	session(api.Session{ID: st, Agent: api.AgentCodex, Mode: api.ModeObserved, Machine: c.Machine, Title: "site",
+		Background: true, LaunchedBy: "nightly-build.sh, from launchd job dev.site.nightly",
 		Cwd: src + "site", RepoRoot: src + "site", Branch: "feat/pricing-page", StartedAt: ago(26 * m), Caps: api.SessionCaps{Activity: true}})
 	item(st, 26*m, prompt("Build the pricing page from docs/pricing.md: three plans, a monthly/yearly toggle and a link to the FAQ.", "human"))
 	item(st, 25*m+30*time.Second, run("shell", "cat docs/pricing.md", "# Pricing\n\nFree · Pro $12/mo · Team $29/seat/mo\nYearly: two months free\nFAQ: /pricing#faq", false))

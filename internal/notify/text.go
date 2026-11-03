@@ -130,8 +130,15 @@ func Where(r *api.Request, s *api.Session) string {
 	if name == "" || name == "." || name == "/" {
 		return ""
 	}
+	var tags []string
 	if branch != "" {
-		return name + " (" + branch + ")"
+		tags = append(tags, branch)
+	}
+	if s != nil && s.Background { // not the session in your terminal
+		tags = append(tags, "background")
+	}
+	if len(tags) > 0 {
+		return name + " (" + strings.Join(tags, ", ") + ")"
 	}
 	return name
 }

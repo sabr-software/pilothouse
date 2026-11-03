@@ -16,7 +16,7 @@ await goto(page, demo, '/');
 await sleep(300);
 
 const chips = () => page.$$eval('.mchips .mchip', (b) => b.map((x) => ({ t: x.textContent.trim(), on: x.getAttribute('aria-pressed') === 'true' })));
-const tags = () => page.$$eval('.ledger .mtag', (t) => t.map((x) => x.textContent.trim()));
+const tags = () => page.$$eval('.ledger .mtag:not(.bg)', (t) => t.map((x) => x.textContent.trim()));
 const rows = () => page.$$eval('.ledger [data-session], .ledger [data-request]', (r) => r.length);
 
 let c = await chips();
@@ -58,7 +58,7 @@ check('the demo has an open permission request on laptop', !!lreq);
 if (lreq) {
   await goto(page, demo, '/r/' + lreq.id);
   await sleep(500);
-  check('request page names the machine', (await text(page, '.dwho .mtag')) === 'laptop', await text(page, '.dwho'));
+  check('request page names the machine', (await text(page, '.dwho .mtag:not(.bg)')) === 'laptop', await text(page, '.dwho'));
   const rule = await page.$$eval('main button', (bs) => bs.filter((b) => /Make it a rule/.test(b.innerText) && b.offsetParent).length);
   check('no "Make it a rule" for another machine\'s request', rule === 0, String(rule));
 }
@@ -89,7 +89,7 @@ await scheme(page, 'light');
 await page.setViewport(DESKTOP);
 await goto(page, demo, '/');
 await sleep(400);
-const side = await page.$$eval('.side-session .mtag', (t) => t.map((x) => x.textContent.trim()));
+const side = await page.$$eval('.side-session .mtag:not(.bg)', (t) => t.map((x) => x.textContent.trim()));
 check('desktop sidebar labels the other machine', side.length === 3 && side.every((x) => x === 'laptop'), side.join(','));
 await shot(page, 'm-today-desktop-light');
 const wide = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
