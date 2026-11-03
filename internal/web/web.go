@@ -355,6 +355,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/passkeys/challenge", a(csrf(s.handlePasskeyChallenge)))
 	mux.HandleFunc("POST /api/passkeys", a(csrf(s.handlePasskeyAdd)))
 	mux.HandleFunc("POST /api/device/restore", a(csrf(s.handleRestore)))
+	mux.HandleFunc("POST /api/device/check", a(csrf(s.handleCheck)))
 	s.routesV02(mux, a)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not_found", "no such endpoint")

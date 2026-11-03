@@ -257,6 +257,17 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.me(deviceOf(r)))
 }
 
+// handleCheck verifies a signed no-op: the app proves its key, clock and
+// cookie all work before you need them (after pairing, in Settings).
+func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
+	d := deviceOf(r)
+	var b struct{}
+	if !s.readSigned(w, r, ActionCheck, d.ID, &b) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "device": d.ID, "fingerprint": d.Fingerprint})
+}
+
 func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		Name string `json:"name"`

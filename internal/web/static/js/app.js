@@ -50,8 +50,7 @@ const routes = [
 
 function repaired(me, wantsNotifications) {
   store.me = me;
-  store.keyMissing = false;
-  store.keyMismatch = false;
+  keyState();
   refreshChrome();
   navigate(wantsNotifications ? '/settings' : '/', true);
   connect();
@@ -108,13 +107,23 @@ function showPair(code, mode) {
   if (v.focus) v.focus();
 }
 
+// The version this page's code came from: an upgrade on the computer
+// leaves an open page running the old code until it reloads.
+let loadedVersion = '';
+
 async function startApp(me, path) {
   store.me = me;
+  if (!loadedVersion) loadedVersion = me.version || '';
   main = main || mountShell(root);
   setNavigator(navigate);
   initKeys();
-  watchKey();
   persistStorage();
+  // Signed in with a key that works: /pair or /login isn't where this
+  // page should stay (a reload after pairing, a link opened again). Only
+  // then wait for the key before rendering; anywhere else, render at once.
+  const onPair = /^\/(pair|login)(#|$)/.test(path);
+  if (onPair && (await keyState()) === 'ok') path = '/';
+  if (!onPair) keyState();
   subscribe((kind) => {
     refreshChrome();
     renderPanes(current);
@@ -133,19 +142,24 @@ async function startApp(me, path) {
   syncPush().catch(() => {});
 }
 
-function watchKey() {
-  if (!self.PilothouseKeys || !self.PilothouseKeys.load) return;
-  self.PilothouseKeys.load().then((rec) => {
-    // A key the computer doesn't have for this device (replaced by a
-    // pairing that didn't finish, in an older version) can't sign either.
-    const want = store.me && store.me.device && store.me.device.public_key;
-    store.keyMismatch = !!(rec && rec.spki && want && rec.spki !== want);
-    store.keyMissing = !rec || store.keyMismatch;
-    refreshChrome();
-  }).catch(() => {
-    store.keyMissing = true;
-    refreshChrome();
-  });
+/**
+ * Compares this browser's key with the one the computer has for the
+ * device: 'ok', 'missing' or 'mismatch' (a key the computer doesn't know:
+ * replaced by a pairing that didn't finish, in versions before 0.4.4).
+ */
+async function keyState() {
+  let state = 'ok';
+  if (self.PilothouseKeys && self.PilothouseKeys.load) {
+    try {
+      const rec = await self.PilothouseKeys.load();
+      const want = store.me && store.me.device && store.me.device.public_key;
+      state = !rec ? 'missing' : rec.spki && want && rec.spki !== want ? 'mismatch' : 'ok';
+    } catch { state = 'missing'; }
+  }
+  store.keyMismatch = state === 'mismatch';
+  store.keyMissing = state !== 'ok';
+  refreshChrome();
+  return state;
 }
 
 addEventListener('pilothouse:nokey', (e) => {
@@ -155,21 +169,24 @@ addEventListener('pilothouse:nokey', (e) => {
 });
 
 // The daemon upgrades behind an app that stays open for days. On resume,
-// compare the version we loaded with the one the server now reports.
+// and when the live stream reconnects (the daemon restarted), compare the
+// version this page's code came from with the one the server now reports.
 let promptedVersion = '';
-addEventListener('visibilitychange', async () => {
-  if (document.hidden || !store.me || !store.me.version) return;
+async function checkVersion() {
+  if (!store.me || !loadedVersion) return;
   try {
     const me = await api('GET', '/api/me');
-    if (me.version && me.version !== store.me.version && me.version !== promptedVersion) {
+    if (me.version && me.version !== loadedVersion && me.version !== promptedVersion) {
       promptedVersion = me.version;
-      toast('Pilothouse was updated on your computer.', '', {
+      toast(`Pilothouse ${me.version} is on your computer. Reload to use it.`, '', {
         action: { label: 'Reload', run: () => location.reload() },
-        ms: 60000,
+        ms: 10 * 60000,
       });
     }
   } catch { /* offline: the reconnect path handles it */ }
-});
+}
+addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
+addEventListener('pilothouse:reconnected', checkVersion);
 
 async function boot() {
   registerSW();

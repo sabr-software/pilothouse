@@ -931,6 +931,9 @@ a.setting:hover, button.setting:hover { background: color-mix(in srgb, var(--sur
 .pair-note { margin: 0 0 18px; padding: 14px 16px; border: 1px solid var(--border-strong); border-radius: var(--r); background: var(--surface); color: var(--text); }
 .pair-note b { display: block; margin-bottom: 4px; font-size: var(--fs-md); }
 .pair-note p { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: 1.45; }
+.pair-check { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 10px 0 0; font-size: var(--fs-sm); color: var(--text-2); }
+.pair-check.ok { color: var(--allow-text); }
+.pair-check.bad { color: var(--warn-text); }
 .pair-ok { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0 0 18px; color: var(--allow-text); font-weight: 650; font-size: var(--fs-md); }
 .scan-part { display: flex; flex-direction: column; gap: 10px; }
 .scan-part .fineprint { margin: 0; justify-content: center; text-align: center; }

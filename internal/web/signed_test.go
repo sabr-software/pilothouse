@@ -198,3 +198,39 @@ func TestCapabilitiesOptionalAndReplySigned(t *testing.T) {
 }
 
 func timeMillis(ms int64) time.Time { return time.UnixMilli(ms).UTC() }
+
+// The app's "check": a signed no-op that proves this device's key, clock
+// and cookie work. A wrong key is refused (and logged), a replay too.
+func TestDeviceCheck(t *testing.T) {
+	e := newEnv(t)
+	k, pub := genKey(t)
+	ck, id := e.pair(pub)
+	body := e.signAction(k, ActionCheck, id, struct{}{})
+	w := e.do("POST", "/api/device/check", body, reqOpt{cookie: ck})
+	if w.Code != 200 {
+		t.Fatalf("check: %d %s", w.Code, w.Body)
+	}
+	var res struct {
+		OK          bool   `json:"ok"`
+		Device      string `json:"device"`
+		Fingerprint string `json:"fingerprint"`
+	}
+	mustJSON(t, w, &res)
+	if !res.OK || res.Device != id || res.Fingerprint != keyFingerprint(pub) {
+		t.Fatalf("check = %+v", res)
+	}
+	if w := e.do("POST", "/api/device/check", body, reqOpt{cookie: ck}); w.Code != 403 || errCode(t, w) != "replayed" {
+		t.Fatalf("replay: %d %s", w.Code, w.Body)
+	}
+	other, _ := genKey(t)
+	if w := e.do("POST", "/api/device/check", e.signAction(other, ActionCheck, id, struct{}{}), reqOpt{cookie: ck}); w.Code != 403 || errCode(t, w) != "bad_signature" {
+		t.Fatalf("wrong key: %d %s", w.Code, w.Body)
+	}
+	// Signed for another target (a different device): refused.
+	if w := e.do("POST", "/api/device/check", e.signAction(k, ActionCheck, "d_someoneelse", struct{}{}), reqOpt{cookie: ck}); w.Code != 403 {
+		t.Fatalf("wrong target: %d %s", w.Code, w.Body)
+	}
+	if w := e.do("POST", "/api/device/check", e.signAction(k, ActionCheck, id, struct{}{}), reqOpt{}); w.Code != 401 {
+		t.Fatalf("no cookie: %d", w.Code)
+	}
+}

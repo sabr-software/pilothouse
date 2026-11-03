@@ -35,7 +35,8 @@ const settings = async () => {
 // ---- Add a passkey ----
 await settings();
 check('settings shows the Passkey row', await waitText(page, 'Lets Face ID or Touch ID restore', 5000, 'main'));
-const addBtn = await page.waitForSelector('main button.btn.small.secondary:not([disabled])', { timeout: 5000 });
+await page.waitForFunction(() => [...document.querySelectorAll('main button.btn.small.secondary:not([disabled])')].some((b) => b.innerText.includes('Add passkey')), { timeout: 5000 });
+const addBtn = await page.evaluateHandle(() => [...document.querySelectorAll('main button.btn.small.secondary:not([disabled])')].find((b) => b.innerText.includes('Add passkey')));
 check('Add passkey button', (await addBtn.evaluate((b) => b.innerText)).includes('Add passkey'));
 await addBtn.click();
 check('toast: passkey added', await waitText(page, 'Passkey added', 8000));

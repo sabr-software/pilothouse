@@ -728,6 +728,8 @@ svg.spark { display: block; width: 100%; height: 28px; margin-top: 8px; overflow
 /* ---------- Machines (pilothouse link) ---------- */
 .mtag { flex: none; padding: 1px 6px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); font: 600 11px/1.5 var(--mono); letter-spacing: 0.01em; white-space: nowrap; }
 .mtag.off { color: var(--text-3); border-style: dashed; }
+.mtag.bg { color: var(--text-3); background: transparent; border-style: dashed; font-family: var(--font); letter-spacing: 0.02em; }
+.mtag + .mtag { margin-left: 4px; }
 .side-session .txt b .mtag { margin-left: 6px; vertical-align: 1px; }
 .qhead .mtag { margin-left: 2px; }
 .mchips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 var(--s3); }
@@ -743,5 +745,8 @@ svg.spark { display: block; width: 100%; height: 28px; margin-top: 8px; overflow
 
 /* The device key's fingerprint (Settings → This device), compared with what linked computers show */
 .key-fp { display: block; margin-top: 2px; }
+.key-ok { color: var(--allow-text); }
+.key-bad { color: var(--warn-text); }
+.key-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; }
 .key-fp code { font: 600 12px/1.4 var(--mono); letter-spacing: 0.02em; color: var(--text-2); }
 .dwho .mtag, .card .mtag { margin-left: 6px; vertical-align: 1px; }

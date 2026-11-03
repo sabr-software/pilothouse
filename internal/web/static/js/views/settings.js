@@ -183,6 +183,44 @@ export function settingsView() {
   }
 
   // ---- Device ----
+  // The signing key, plainly: this device's key next to the one the
+  // computer has for it, a check that proves it signs, and Pair again.
+  let checked = null; // {ok, text, at} from the last Check
+  const localFp = h('code');
+  if (self.PilothouseKeys) {
+    self.PilothouseKeys.load().then((rec) => rec && rec.spki ? self.PilothouseKeys.fingerprint(rec.spki) : '')
+      .then((fp) => { localFp.textContent = fp || 'none'; }).catch(() => { localFp.textContent = 'none'; });
+  }
+  async function runCheck() {
+    checked = { busy: true };
+    renderDevice();
+    const res = await self.PilothouseKeys.check(store.me.device.id);
+    const d = res.data || {};
+    checked = res.ok ? { ok: true, text: 'Works — your computer just verified a signature from this device' }
+      : { ok: false, text: d.code === 'stale_signature' ? 'This device’s clock is off — fix its time, then check again'
+        : d.code === 'no_key' || d.code === 'bad_signature' ? 'Your computer refused this device’s signature — pair it again'
+          : d.error || 'Couldn’t check — is your computer reachable?' };
+    renderDevice();
+  }
+  function keyRow(d) {
+    const bad = store.keyMissing || (checked && checked.ok === false);
+    const status = checked && checked.busy ? 'Checking…'
+      : checked ? checked.text
+        : store.keyMismatch ? 'Doesn’t match the key your computer has for this device — replies and approvals are refused'
+          : store.keyMissing ? 'Missing — approvals and replies cannot be signed'
+            : 'Kept on this device; signs every answer, reply and rule';
+    return h('div', { class: 'setting key-setting' }, tile(bad ? 'amber' : 'green', 'key'),
+      h('div', { class: 'label' }, h('b', null, 'Signing key'),
+        h('span', { class: checked && !checked.busy ? (checked.ok ? 'key-ok' : 'key-bad') : null, role: 'status' }, status),
+        // Linked computers show the computer's form when they ask to trust it.
+        h('span', { class: 'key-fp' }, 'This device ', localFp),
+        d.fingerprint ? h('span', { class: 'key-fp' }, 'Your computer has ', h('code', null, d.fingerprint)) : null),
+      h('div', { class: 'value key-actions' },
+        !store.keyMissing ? h('button', { class: 'btn small secondary', type: 'button', disabled: !!(checked && checked.busy), onclick: runCheck }, 'Check') : null,
+        bad && d.passkey && passkeySupported() ? restoreKeyButton('btn small secondary', renderDevice) : null,
+        link('/pair', { class: bad ? 'btn small primary' : 'btn small ghost' }, 'Pair again')));
+  }
+
   function renderDevice() {
     const d = store.me.device;
     const input = h('input', { class: 'input', id: 'device-name', value: d.name, maxlength: 60, autocomplete: 'off' });
@@ -203,14 +241,7 @@ export function settingsView() {
     });
     fill(device,
       h('div', { class: 'group-pad' }, h('label', { class: 'field-label', for: 'device-name' }, 'Name'), form),
-      h('div', { class: 'setting' }, tile(store.keyMissing ? 'amber' : 'green', 'key'),
-        h('div', { class: 'label' }, h('b', null, 'Signing key'),
-          h('span', null, store.keyMissing ? 'Missing — approvals and replies cannot be signed' : 'Kept on this device; signs every answer, reply and rule'),
-          // Linked computers show this when they ask to trust the device.
-          !store.keyMissing && d.fingerprint ? h('span', { class: 'key-fp' }, 'Key ', h('code', null, d.fingerprint)) : null),
-        !store.keyMissing ? h('div', { class: 'value' }, 'P-256')
-          : d.passkey && passkeySupported() ? restoreKeyButton('btn small secondary', renderDevice)
-            : link('/pair', { class: 'value' }, 'Pair again')),
+      keyRow(d),
       passkeySupported()
         ? h('div', { class: 'setting' }, tile(d.passkey ? 'green' : 'gray', 'shield'),
           h('div', { class: 'label' }, h('b', null, 'Passkey'),

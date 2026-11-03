@@ -36,6 +36,7 @@ const (
 	ActionRule     = "rule"     // target: "add" | "remove:<name>" | "enable:<name>" | "disable:<name>" | "preset:<name>"
 	ActionTask     = "task"     // target: "new" | task id
 	ActionDesktop  = "desktop"  // target: session id; payload: {} (open it on the computer)
+	ActionCheck    = "check"    // target: the device's own id; payload: {} (changes nothing)
 )
 
 // maxSignedBody bounds a signed request body (the payload is inside it).
@@ -98,24 +99,27 @@ func (s *Server) readSigned(w http.ResponseWriter, r *http.Request, action, targ
 // device's key, and spends the nonce. It writes the error and returns
 // false on failure. Shared by v1 decisions and v2 actions.
 func (s *Server) verifyDeviceSig(w http.ResponseWriter, r *http.Request, d *deviceRow, canonical, sigB64 string, ts int64, nonce string) bool {
-	if d.untrusted { // over a link, with a key no one confirmed on this machine
-		writeErr(w, http.StatusForbidden, "untrusted_device", s.untrustedMsg())
+	// Every refusal is logged: a device that can see but not answer is
+	// otherwise invisible from the computer.
+	refuse := func(code, msg string) bool {
+		s.log.Warn("signature refused", "device", d.ID, "name", d.Name, "code", code, "path", r.URL.Path)
+		writeErr(w, http.StatusForbidden, code, msg)
 		return false
+	}
+	if d.untrusted { // over a link, with a key no one confirmed on this machine
+		return refuse("untrusted_device", s.untrustedMsg())
 	}
 	skew := s.now().Sub(time.UnixMilli(ts))
 	if skew > MaxClockSkew || skew < -MaxClockSkew {
-		writeErr(w, http.StatusForbidden, "stale_signature", "signature timestamp is too far from the computer's clock — check the time on this device")
-		return false
+		return refuse("stale_signature", "signature timestamp is too far from the computer's clock — check the time on this device")
 	}
 	pub, err := parsePublicKey(d.PublicKey)
 	if err != nil {
-		writeErr(w, http.StatusForbidden, "bad_signature", "device key is invalid; pair this device again")
-		return false
+		return refuse("bad_signature", "device key is invalid; pair this device again")
 	}
 	sig, err := decodeB64(sigB64)
 	if err != nil || !VerifyP1363(pub, []byte(canonical), sig) {
-		writeErr(w, http.StatusForbidden, "bad_signature", "signature does not match this device's key")
-		return false
+		return refuse("bad_signature", "signature does not match this device's key")
 	}
 	// The nonce outlives the whole acceptance window on both sides.
 	fresh, err := s.useNonce(r.Context(), d.ID, nonce, time.UnixMilli(ts).Add(2*MaxClockSkew+time.Minute))

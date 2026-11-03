@@ -50,10 +50,22 @@ export function pairView({ code, mode, name, onDone }) {
     return me;
   }
 
+  // A link opened again (its one-time code already used) in a browser that
+  // is signed in: there is nothing to do, so open the app.
+  async function signedIn(e) {
+    if (!e || e.code !== 'invalid_code') return null;
+    try {
+      const me = await api('GET', '/api/me');
+      return me && me.device ? me : null;
+    } catch { return null; }
+  }
+
   if (mode === 'login' && code) {
     const err = h('p', { class: 'form-error', role: 'alert' });
     add(root, hero('Signing in…', 'Connecting this browser to your computer.'), err);
-    redeem(code, guessName()).then(onDone, (e) => {
+    redeem(code, guessName()).then(onDone, async (e) => {
+      const me = await signedIn(e);
+      if (me) { onDone(me); return; }
       fill(root, hero('Couldn’t sign in', messageFor(e)),
         h('div', { class: 'terminal-hint' }, h('span', { class: 'prompt' }, '$'), 'pilothouse open'));
     });
@@ -65,16 +77,18 @@ export function pairView({ code, mode, name, onDone }) {
   // type a new one appears.
   let linkCode = code;
   const err = h('p', { class: 'form-error', role: 'alert', 'aria-live': 'assertive' });
+  // Not a login: keep password managers (iCloud Passwords in Chrome) quiet.
+  const noManagers = { 'data-1p-ignore': '', 'data-lpignore': 'true', 'data-bwignore': '', 'data-form-type': 'other' };
   const codeInput = h('input', {
-    class: 'input code-input', id: 'pair-code', autocomplete: 'one-time-code', autocapitalize: 'characters',
-    spellcheck: 'false', inputmode: 'text', placeholder: 'XXXX-XXXX-XXXX', maxlength: 20, required: true,
+    class: 'input code-input', id: 'pair-code', autocomplete: 'off', autocapitalize: 'characters',
+    spellcheck: 'false', inputmode: 'text', placeholder: 'XXXX-XXXX-XXXX', maxlength: 20, required: true, ...noManagers,
   });
   const codeField = (label) => h('div', null, h('label', { class: 'field-label', for: 'pair-code' }, label), codeInput);
   const codeSlot = h('div', { class: 'code-slot' },
     code
       ? h('div', { class: 'code-chip' }, icon('check', 'sm'), h('span', { class: 'sr-only' }, 'Pairing code '), code)
       : codeField('Pairing code'));
-  const nameInput = h('input', { class: 'input', id: 'pair-name', value: name || guessName(), maxlength: 60, autocomplete: 'off', required: true });
+  const nameInput = h('input', { class: 'input', id: 'pair-name', value: name || guessName(), maxlength: 60, autocomplete: 'off', required: true, ...noManagers });
   // On a phone, scanning the QR code from inside the app is the easy way
   // (the iPhone Camera app would open it in Safari instead of here).
   const scanFirst = !code && canScan() && navigator.maxTouchPoints > 0;
@@ -127,6 +141,9 @@ export function pairView({ code, mode, name, onDone }) {
       const me = await redeem(c, nameInput.value.trim() || guessName());
       showDone(me);
     } catch (e2) {
+      // The code from a link was used already, and this browser is signed in.
+      const me = linkCode ? await signedIn(e2) : null;
+      if (me) { onDone(me); return; }
       err.textContent = messageFor(e2);
       submit.disabled = false;
       fill(submit, 'Pair this device');
@@ -184,11 +201,19 @@ export function pairView({ code, mode, name, onDone }) {
           open.focus();
         }))
       : null;
+    // Prove it: a signed check the computer verifies with the new key.
+    const proof = h('p', { class: 'pair-check', role: 'status' }, h('span', { class: 'spin', 'aria-hidden': 'true' }), 'Checking that this device can sign…');
+    self.PilothouseKeys.check(me.device.id).then((res) => {
+      fill(proof, res.ok
+        ? [icon('check', 'sm'), 'Signing works: your computer verified this device’s key.']
+        : [icon('alert', 'sm'), (res.data && res.data.error) || 'Your computer couldn’t verify this device’s key. Pair again.']);
+      proof.classList.add(res.ok ? 'ok' : 'bad');
+    });
     fill(root,
       h('div', { class: 'pair-hero' },
         h('div', { class: 'done-mark' }, icon('check')),
         h('h1', null, 'You’re paired'),
-        h('p', null, `${me.device.name} can now answer for ${me.machine}.`)),
+        h('p', null, `${me.device.name} can now answer for ${me.machine}.`), proof),
       passkey,
       actions,
       offerNotifications

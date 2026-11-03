@@ -196,8 +196,25 @@
     return postSigned('/api/requests/' + encodeURIComponent(id) + '/respond', 'decide', id, body);
   }
 
+  /**
+   * The short form of a public key the computer shows for it
+   * ("3318 8d65 7231 dc26"): the first 8 bytes of SHA-256 of the SPKI text.
+   */
+  function fingerprint(spki) {
+    return g.crypto.subtle.digest('SHA-256', new TextEncoder().encode(spki)).then(function (h) {
+      var x = Array.prototype.map.call(new Uint8Array(h).slice(0, 8), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+      return x.slice(0, 4) + ' ' + x.slice(4, 8) + ' ' + x.slice(8, 12) + ' ' + x.slice(12, 16);
+    });
+  }
+
+  /** A signed no-op: resolves {ok, status, data} like postSigned. */
+  function check(deviceId) {
+    return postSigned('/api/device/check', 'check', deviceId, {});
+  }
+
   g.PilothouseKeys = {
     load: load, generate: generate, save: save, create: create, clear: clear, canonical: canonical, decide: decide,
-    canonicalAction: canonicalAction, signAction: signAction, postSigned: postSigned, respond: respond
+    canonicalAction: canonicalAction, signAction: signAction, postSigned: postSigned, respond: respond,
+    fingerprint: fingerprint, check: check
   };
 })(self);

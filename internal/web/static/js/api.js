@@ -146,13 +146,29 @@ function applyEvent(ev) {
       break;
     case 'device.changed':
       if (d && store.me && d.id === store.me.device.id) {
-        if (d.revoked_at) { location.assign('/pair'); return; }
+        if (d.revoked_at) { revokedHere(d.id); return; }
         store.me.device = d;
       }
       break;
   }
   for (const fn of eventHooks) fn(ev);
   changed();
+}
+
+// This device was revoked. Pairing again from this browser (this tab or
+// another) revokes the old device the moment the new one exists, and the
+// browser's cookie is already the new device's: carry on as that one.
+// Only a real sign-out goes to the pair screen.
+async function revokedHere(oldId) {
+  try {
+    const me = await api('GET', '/api/me');
+    if (me && me.device && me.device.id !== oldId) {
+      store.me = me;
+      changed();
+      return;
+    }
+  } catch { /* 401: signed out */ }
+  location.assign('/pair');
 }
 
 const eventHooks = new Set();
@@ -227,8 +243,10 @@ export function connect() {
   heard();
   src.addEventListener('open', () => {
     heard();
+    const again = everLive;
     backoff = 0;
     live();
+    if (again) dispatchEvent(new Event('pilothouse:reconnected'));
   });
   src.addEventListener('ping', heard);
   src.addEventListener('event', (m) => {
