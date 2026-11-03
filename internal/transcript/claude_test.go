@@ -263,6 +263,120 @@ func TestClaudeSidechains(t *testing.T) {
 	}
 }
 
+// Workflow agents (subagents/workflows/<run>/agent-*.jsonl) and Agent-tool
+// subagents past MaxSidechains count usage without adding feed items; a
+// workflow's journal is not a transcript.
+func TestClaudeWorkflowAndOlderSidechainsCountUsage(t *testing.T) {
+	e := newEnv(t)
+	path := e.claudePath("sess-w")
+	c := newClaudeLog()
+	c.prompt("Run the review workflow", "human")
+	c.text("msg_m", "m-known", "Started.", usage(1, 1, 0, 0))
+	writeFile(t, path, c.String())
+
+	sub := filepath.Join(strings.TrimSuffix(path, ".jsonl"), "subagents")
+	side := func(id string, in int) string {
+		s := newClaudeLog()
+		s.sidechain = true
+		s.prompt("subtask "+id, "")
+		s.toolUse("msg_"+id, "m-known", "toolu_"+id, "Bash", map[string]any{"command": "ls"}, usage(in, 1, 1000, 0))
+		s.result("toolu_"+id, "ok", false, nil)
+		return s.String()
+	}
+	writeFile(t, filepath.Join(sub, "agent-new.jsonl"), side("new", 10))
+	writeFile(t, filepath.Join(sub, "agent-old.jsonl"), side("old", 20))
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(filepath.Join(sub, "agent-old.jsonl"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	wf := filepath.Join(sub, "workflows", "wf_1")
+	writeFile(t, filepath.Join(wf, "agent-w1.jsonl"), side("w1", 300))
+	writeFile(t, filepath.Join(wf, "agent-w1.meta.json"), `{"agentType":"general-purpose"}`)
+	writeFile(t, filepath.Join(wf, "journal.jsonl"), side("journal", 4000))
+
+	o := e.opts
+	o.MaxSidechains = 1
+	r := NewReader(o)
+	src := Source{Agent: api.AgentClaude, Path: path}
+	res := mustRead(t, r, "w", src, Query{Limit: 100})
+	if res.Usage.InputTokens != 1+10+20+300 || res.Usage.CacheReadTokens != 3000 || res.Usage.Turns != 1 {
+		t.Errorf("usage = %+v, want the main file, both subagents and the workflow agent", res.Usage)
+	}
+	if got := findItem(t, res.Items, "toolu_new"); !got.Sidechain {
+		t.Errorf("newest subagent's step = %+v", got)
+	}
+	for _, it := range res.Items {
+		if it.ID == "toolu_old" || it.ID == "toolu_w1" || it.ID == "toolu_journal" {
+			t.Errorf("usage-only file added a feed item: %+v", it)
+		}
+	}
+
+	// The workflow agent keeps working: its new response counts.
+	s := newClaudeLog()
+	s.sidechain = true
+	s.text("msg_w1b", "m-known", "done", usage(5, 1, 0, 0))
+	appendFile(t, filepath.Join(wf, "agent-w1.jsonl"), s.String())
+	writeFile(t, filepath.Join(sub, "workflows", "wf_2", "agent-w2.jsonl"), side("w2", 7))
+	u, err := r.Usage("w", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Usage.InputTokens != 1+10+20+300+5+7 {
+		t.Errorf("after more work: input = %d", u.Usage.InputTokens)
+	}
+
+	// MaxSidechainFiles keeps the newest files.
+	o.MaxSidechainFiles = 3
+	u, err = NewReader(o).Usage("w2", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Usage.InputTokens != 1+10+300+5+7 {
+		t.Errorf("bounded: input = %d, want the oldest subagent left out", u.Usage.InputTokens)
+	}
+}
+
+func TestTailReadUpTo(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a.jsonl")
+	writeFile(t, path, "{\"a\":1}\n")
+	var tl tail
+	read := func() {
+		f, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		st, _ := f.Stat()
+		if err := tl.read(f, st, tailLimits{maxLine: 1 << 20, firstScan: 1 << 20, maxHead: 1 << 20, maxRead: 1 << 20}, func([]byte, int64) {}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stat := func() os.FileInfo {
+		st, err := os.Lstat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st
+	}
+	if tl.readUpTo(stat()) {
+		t.Error("an unread file counts as read")
+	}
+	read()
+	if !tl.readUpTo(stat()) {
+		t.Error("a file read to its end isn't")
+	}
+	appendFile(t, path, "{\"a\":2}\n")
+	if tl.readUpTo(stat()) {
+		t.Error("a grown file counts as read")
+	}
+	read()
+	appendFile(t, path, "{\"a\":")
+	read()
+	if tl.readUpTo(stat()) {
+		t.Error("a file ending in a partial line counts as read")
+	}
+}
+
 // Older Claude Code versions wrote subagent records into the main file.
 func TestClaudeInlineSidechain(t *testing.T) {
 	e := newEnv(t)

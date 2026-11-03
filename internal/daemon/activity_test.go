@@ -446,7 +446,7 @@ func TestActivityOpenCode(t *testing.T) {
 		{`INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)`,
 			[]any{"m1", sid, ms - 3000, ms - 3000, `{"role":"user"}`}},
 		{`INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)`,
-			[]any{"m2", sid, ms - 2000, ms - 1000, `{"role":"assistant"}`}},
+			[]any{"m2", sid, ms - 2000, ms - 1000, `{"role":"assistant","modelID":"oc-model","cost":0.12,"tokens":{"input":800,"output":40,"reasoning":3,"cache":{"read":200,"write":0}}}`}},
 		{`INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)`,
 			[]any{"p1", "m1", sid, ms - 3000, ms - 3000, `{"type":"text","text":"fix the build"}`}},
 		{`INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -471,4 +471,10 @@ func TestActivityOpenCode(t *testing.T) {
 	if act.Usage == nil || act.Usage.CostUSD != 0.12 || act.Usage.InputTokens != 800 {
 		t.Fatalf("usage = %+v", act.Usage)
 	}
+	// The usage loop records it for insights, priced by OpenCode.
+	waitFor(t, "OpenCode usage in insights", func() bool {
+		in, err := h.c.Insights(bg, api.InsightsQuery{Days: 1})
+		return err == nil && len(in.ByAgent) == 1 && in.ByAgent[0].Key == "opencode" && in.Total.CostUSD == 0.12 &&
+			in.Total.InputTokens == 800 && in.Total.CacheReadTokens == 200 && in.Total.Turns == 1 && in.ByModel[0].Key == "oc-model"
+	})
 }

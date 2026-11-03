@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/config"
 	"github.com/sabr-software/pilothouse/internal/store"
 )
 
@@ -119,6 +120,37 @@ func TestBuild(t *testing.T) {
 	}
 	if !in.From.Equal(rg.From) || !in.To.Equal(now) {
 		t.Errorf("from/to = %v %v", in.From, in.To)
+	}
+}
+
+// Plans are priced over the range's days and set beside the API-price
+// cost of the agent they cover.
+func TestBuildPlans(t *testing.T) {
+	usage := []store.UsageRow{
+		{SessionID: "s1", Day: "2026-10-23", Agent: api.AgentClaude, Model: "claude-opus-5-5", CostUSD: 1000.004},
+		{SessionID: "s2", Day: "2026-10-23", Agent: api.AgentOpenCode, Model: "deepseek-v4.1-flash", CostUSD: 4.2},
+	}
+	plans := []config.Plan{
+		{Name: " Claude Max ", Agent: "claude", MonthlyUSD: 200},
+		{Name: "OpenCode Go", Agent: "opencode", MonthlyUSD: 10},
+		{Name: "ChatGPT Pro", Agent: "codex", MonthlyUSD: 200},
+	}
+	in := Build(Input{Range: NewRange(now, zone, 7), Loc: zone, Usage: usage, Plans: plans})
+	want := []api.InsightsPlan{
+		{Name: "Claude Max", Agent: api.AgentClaude, MonthlyUSD: 200, RangeUSD: 46, APIUSD: 1000},
+		{Name: "OpenCode Go", Agent: api.AgentOpenCode, MonthlyUSD: 10, RangeUSD: 2.3, APIUSD: 4.2},
+		{Name: "ChatGPT Pro", Agent: api.AgentCodex, MonthlyUSD: 200, RangeUSD: 46},
+	}
+	if len(in.Plans) != len(want) {
+		t.Fatalf("plans = %+v", in.Plans)
+	}
+	for i := range want {
+		if in.Plans[i] != want[i] {
+			t.Errorf("plan %d = %+v, want %+v", i, in.Plans[i], want[i])
+		}
+	}
+	if none := Build(Input{Range: NewRange(now, zone, 7), Loc: zone}); none.Plans == nil || len(none.Plans) != 0 {
+		t.Errorf("no plans = %#v, want an empty list", none.Plans)
 	}
 }
 

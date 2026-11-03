@@ -325,7 +325,7 @@ func (d *Daemon) Insights(ctx context.Context, q api.InsightsQuery) (api.Insight
 		return api.Insights{}, err
 	}
 	return insights.Build(insights.Input{Range: rg, Loc: st.loc, Usage: rows, Events: events,
-		BudgetUSD: d.cfg.Usage.DailyBudgetUSD, BurnUSDh: st.reader.SpentSince(now.Add(-time.Hour))}), nil
+		BudgetUSD: d.cfg.Usage.DailyBudgetUSD, BurnUSDh: st.reader.SpentSince(now.Add(-time.Hour)), Plans: d.cfg.Usage.Plans}), nil
 }
 
 // activityCaps sets Activity when the session's transcript is readable.

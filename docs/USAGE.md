@@ -1,8 +1,9 @@
 # Activity, usage and cost
 
-Pilothouse reads the transcripts Claude Code and Codex already write, so the
-web app, the phone and the CLI can show what a session is doing, how many tokens
-it used and roughly what that cost. Nothing is sent anywhere: transcripts are
+Pilothouse reads the transcripts Claude Code and Codex already write, and
+OpenCode's database, so the web app, the phone and the CLI can show what a
+session is doing, how many tokens it used and what that would cost at API
+prices. Nothing is sent anywhere: transcripts are
 read on this machine, by the daemon, and only what you open is shown.
 
 - [What is read](#what-is-read)
@@ -10,6 +11,7 @@ read on this machine, by the daemon, and only what you open is shown.
 - [The session report](#the-session-report)
 - [Catch me up](#catch-me-up)
 - [Usage and cost](#usage-and-cost)
+- [Plans](#plans)
 - [Daily budget](#daily-budget)
 - [Insights](#insights)
 - [CLI](#cli)
@@ -19,8 +21,9 @@ read on this machine, by the daemon, and only what you open is shown.
 
 | Agent | Transcript | Found by |
 |-------|------------|----------|
-| Claude Code | `~/.claude/projects/<project>/<session>.jsonl`, and its subagents in `<session>/subagents/agent-*.jsonl` (also under `$CLAUDE_CONFIG_DIR/projects`) | the `transcript_path` its hooks send, else the session id |
+| Claude Code | `~/.claude/projects/<project>/<session>.jsonl`, its subagents in `<session>/subagents/agent-*.jsonl` and its workflow agents in `<session>/subagents/workflows/<run>/agent-*.jsonl` (also under `$CLAUDE_CONFIG_DIR/projects`) | the `transcript_path` its hooks send, else the session id |
 | Codex | `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*-<thread>.jsonl` (default `~/.codex/sessions`) | the `transcript_path` its hooks send; Codex sends none until the file exists, so the daemon then looks for the rollout by thread id |
+| OpenCode | its SQLite database, `~/.local/share/opencode/opencode.db` (`$OPENCODE_DB`, `$OPENCODE_DATA_HOME`, `$XDG_DATA_HOME`), read-only: the session's messages and those of the subagent sessions it started | the session id its plugin sends |
 
 The transcript path comes from a hook payload, which the agent controls. So it
 is trusted only after it resolves, symlinks included, to a **regular `.jsonl`
@@ -38,6 +41,9 @@ Reads are incremental (each file's offset is remembered) and bounded:
 - A single line over 8 MB (huge tool output) is skipped without being buffered.
 - A session's feed keeps its newest 1,000 items; prompt and reply text are
   capped at 2 KB and tool output at its last 1 KB.
+- The 64 most recently written subagent transcripts of a Claude Code session
+  add their steps to the feed. Older ones, and workflow agents, only count
+  usage, up to 4,096 files a session.
 - A transcript that is truncated, replaced or rewritten starts the feed over.
 - Compressed (`.jsonl.zst`) Codex rollouts, which Codex makes of old sessions,
   are not read.
@@ -121,9 +127,12 @@ agent cleaning up old transcripts. Input never includes cached tokens: cache
 reads and writes are counted on their own (OpenAI counts cached tokens inside
 input; Pilothouse moves them out).
 
-**Cost is an estimate from public list prices**, standard speed, USD per
-million tokens. Subscriptions, credits, discounts and negotiated rates are not
-known to Pilothouse. Built-in prices:
+**Cost is what the tokens would cost at public pay-per-token API prices**,
+standard speed, USD per million tokens. It is not what a subscription such as
+Claude Max charges: a plan covers this usage for a flat price, so list it under
+[Plans](#plans) to see both. Credits, discounts and negotiated rates are not
+known to Pilothouse. OpenCode records a cost for each message itself, from its
+own prices for the provider; Pilothouse uses that. Built-in prices:
 
 - **Claude** — Anthropic API list prices (as of 2026-10-06): Fable 5.1 and
   Fable 5 $10 / $50, Opus 5.5 $4 / $20, Opus 5 and Opus 4.5–4.8 $5 / $25,
@@ -157,6 +166,27 @@ Each live session's usage refreshes every 10 seconds and is stored with the
 session (so `pilothouse ls --json`, the TUI and the phone see it), at most every
 30 seconds per session.
 
+## Plans
+
+```yaml
+usage:
+  plans:
+    - name: Claude Max        # anything you like, up to 60 characters
+      agent: claude           # claude, codex, opencode or grok
+      monthly_usd: 200
+    - name: OpenCode Go
+      agent: opencode
+      monthly_usd: 10
+```
+
+Each plan covers one agent. Insights and `pilothouse usage` then show what you
+pay a month, that price over the range shown (a month is 365.25 / 12 days),
+and next to each plan what its agent used at API prices, so you can see how
+much a flat plan covers. The breakdown by agent names each agent's plan.
+Pilothouse doesn't know a plan's usage limits. After changing plans, restart
+the daemon (`pilothouse service restart`, or `pilothouse stop` and
+`pilothouse start`).
+
 ## Daily budget
 
 ```yaml
@@ -164,8 +194,9 @@ usage:
   daily_budget_usd: 20
 ```
 
-When today's estimated spend (local time, all sessions) reaches 80 % and again
-at 100 % of the budget, Pilothouse sends one notification each, to your desktop
+The budget is in API-price dollars, so on a flat plan it works as an alarm for
+heavy use rather than a spending limit. When today's estimated spend (local
+time, all sessions) reaches 80 % and again at 100 % of the budget, Pilothouse sends one notification each, to your desktop
 and devices, once per day — also across restarts. It never stops an agent.
 
 ## Insights
@@ -173,7 +204,9 @@ and devices, once per day — also across restarts. It never stops an agent.
 The insights page and `pilothouse usage` cover the last N days (7 by default,
 up to 90):
 
-- Cost and tokens per day, and by agent, model and repo, with session counts.
+- Cost at API prices and tokens per day, and by agent, model and repo, with
+  session counts.
+- Your plans: what you pay, and what each plan's agent used at API prices.
 - Today's spend against the budget, and the burn rate over the last hour.
 - What the rules did: calls **auto-allowed** by rules and "allow for session"
   grants (grants also counted on their own), requests that **asked** a person,
@@ -199,8 +232,8 @@ pilothouse usage --days 30 --json
 
 ## Limits
 
-- Estimates, not invoices: list prices only, and Codex prices are derived from
-  its credit rate card.
+- Estimates, not invoices: API list prices only (OpenCode: its own), and
+  Codex prices are derived from its credit rate card.
 - Usage is counted while the daemon runs. On start it also counts sessions
   that ended in the last week (up to 100); sessions older than that, or never
   seen by Pilothouse, aren't counted.

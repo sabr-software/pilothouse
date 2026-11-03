@@ -254,6 +254,104 @@ func readOpenCodeUsage(db *sql.DB, sessionID string) (api.Usage, error) {
 	return u, nil
 }
 
+// ReadOpenCodeDays reads one OpenCode session's token use per local day
+// and model, from its assistant messages and those of the subagent
+// sessions it started. Cost is what OpenCode recorded for each message
+// (its own price for the provider; 0 when it has none). Turns are the
+// session's own prompts, counted on the day asked for the model that
+// answered.
+func ReadOpenCodeDays(dbPath, sessionID string, loc *time.Location) ([]DayUsage, error) {
+	if sessionID == "" {
+		return nil, fmt.Errorf("no OpenCode session id")
+	}
+	if loc == nil {
+		loc = time.Local
+	}
+	db, err := openOpenCode(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	rows, err := db.Query(`WITH RECURSIVE tree(id) AS (
+			SELECT ? UNION SELECT s.id FROM session s JOIN tree t ON s.parent_id = t.id)
+		SELECT m.session_id, m.time_created, m.data FROM message m JOIN tree t ON m.session_id = t.id
+		ORDER BY m.time_created, m.id`, sessionID)
+	if err != nil {
+		// An OpenCode without subagent sessions (no parent_id).
+		rows, err = db.Query(`SELECT session_id, time_created, data FROM message WHERE session_id = ?
+			ORDER BY time_created, id`, sessionID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	defer rows.Close()
+	type key struct{ day, model string }
+	agg := map[key]*DayUsage{}
+	get := func(k key) *DayUsage {
+		if a := agg[k]; a != nil {
+			return a
+		}
+		a := &DayUsage{Day: k.day, Model: k.model}
+		agg[k] = a
+		return a
+	}
+	pending := ""
+	for rows.Next() {
+		var sid, data string
+		var created int64
+		if err := rows.Scan(&sid, &created, &data); err != nil {
+			return nil, err
+		}
+		var m struct {
+			Role    string  `json:"role"`
+			ModelID string  `json:"modelID"`
+			Cost    float64 `json:"cost"`
+			Tokens  struct {
+				Input     int64 `json:"input"`
+				Output    int64 `json:"output"`
+				Reasoning int64 `json:"reasoning"`
+				Cache     struct {
+					Read  int64 `json:"read"`
+					Write int64 `json:"write"`
+				} `json:"cache"`
+			} `json:"tokens"`
+		}
+		if json.Unmarshal([]byte(data), &m) != nil {
+			continue
+		}
+		day := time.UnixMilli(created).In(loc).Format("2006-01-02")
+		switch m.Role {
+		case "user":
+			if sid == sessionID {
+				pending = day
+			}
+		case "assistant":
+			a := get(key{day, m.ModelID})
+			a.Tokens.Add(Tokens{Input: m.Tokens.Input, Output: m.Tokens.Output, Reasoning: m.Tokens.Reasoning,
+				CacheRead: m.Tokens.Cache.Read, CacheWrite: m.Tokens.Cache.Write})
+			a.CostUSD += m.Cost
+			if pending != "" && sid == sessionID {
+				get(key{pending, m.ModelID}).Turns++
+				pending = ""
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]DayUsage, 0, len(agg))
+	for _, a := range agg {
+		out = append(out, *a)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Day != out[j].Day {
+			return out[i].Day < out[j].Day
+		}
+		return out[i].Model < out[j].Model
+	})
+	return out, nil
+}
+
 func readOpenCodeTurns(db *sql.DB, sessionID string) (map[string]int, error) {
 	rows, err := db.Query(`SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created, id`, sessionID)
 	if err != nil {

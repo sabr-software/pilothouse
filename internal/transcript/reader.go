@@ -40,9 +40,13 @@ type Options struct {
 	FirstScan   int64
 	MaxHead     int64
 	MaxRead     int64
-	// MaxSidechains bounds the subagent files read per Claude session
-	// (the most recently written ones win); default 64.
+	// MaxSidechains bounds the subagent files whose steps go into a Claude
+	// session's feed (the most recently written ones win); default 64.
+	// The others still count usage.
 	MaxSidechains int
+	// MaxSidechainFiles bounds the subagent files read at all per Claude
+	// session, workflow agents included (newest first); default 4096.
+	MaxSidechainFiles int
 }
 
 // Source says where a session's transcript is.
@@ -100,6 +104,9 @@ func NewReader(o Options) *Reader {
 	}
 	if o.MaxSidechains <= 0 {
 		o.MaxSidechains = 64
+	}
+	if o.MaxSidechainFiles <= 0 {
+		o.MaxSidechainFiles = 4096
 	}
 	if o.Location == nil {
 		o.Location = time.Local
@@ -309,56 +316,92 @@ func (s *session) reset(src Source, o Options) {
 	}
 }
 
-// readSidechains reads Claude's subagent transcripts:
-// <dir>/<session id>/subagents/agent-<id>.jsonl, newest MaxSidechains.
-// Only a rewritten file is an error (errReset); an unreadable one is
-// skipped.
+// readSidechains reads Claude's subagent transcripts: the Agent tool's
+// <dir>/<session id>/subagents/agent-<id>.jsonl, and workflow agents'
+// subagents/workflows/<run>/agent-<id>.jsonl. The newest MaxSidechains
+// Agent-tool files go into the feed; older ones, and every workflow agent
+// (no call in the conversation started it), only count usage, so totals
+// include all of them. A file unchanged since it was last read is not
+// opened again. Only a rewritten file is an error (errReset); an
+// unreadable one is skipped.
 func (r *Reader) readSidechains(s *session, roots []string) error {
 	real, err := Resolve(s.main.path, roots)
 	if err != nil {
 		return nil
 	}
 	dir := filepath.Join(strings.TrimSuffix(real, ".jsonl"), "subagents")
-	ents, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
+	cands := sidechainFiles(dir, "")
+	sortNewest(cands)
+	for i := range cands {
+		cands[i].feed = i < r.opts.MaxSidechains
 	}
-	type cand struct {
-		path string
-		mod  time.Time
-	}
-	var cands []cand
-	for _, e := range ents {
-		if !e.Type().IsRegular() || !strings.HasSuffix(e.Name(), ".jsonl") {
-			continue
-		}
-		if info, err := e.Info(); err == nil {
-			cands = append(cands, cand{filepath.Join(dir, e.Name()), info.ModTime()})
+	runs, _ := os.ReadDir(filepath.Join(dir, "workflows"))
+	for _, run := range runs {
+		if run.IsDir() {
+			cands = append(cands, sidechainFiles(filepath.Join(dir, "workflows", run.Name()), "agent-")...)
 		}
 	}
-	sort.Slice(cands, func(i, j int) bool {
-		if !cands[i].mod.Equal(cands[j].mod) {
-			return cands[i].mod.After(cands[j].mod)
-		}
-		return cands[i].path < cands[j].path
-	})
-	if len(cands) > r.opts.MaxSidechains {
-		cands = cands[:r.opts.MaxSidechains]
+	if len(cands) > r.opts.MaxSidechainFiles {
+		sortNewest(cands)
+		cands = cands[:r.opts.MaxSidechainFiles]
 	}
 	sort.Slice(cands, func(i, j int) bool { return cands[i].path < cands[j].path })
 	for _, c := range cands {
 		fl := s.sides[c.path]
-		if fl == nil {
+		switch {
+		case fl == nil:
 			p := &claudeParser{f: s.feed, sidechain: true, chain: filepath.Base(c.path)}
-			p.turn = s.feed.turnOfCall(sidechainCall(c.path))
-			fl = &file{path: c.path, parse: p.line, head: p.headLine}
+			fl = &file{path: c.path, parse: p.headLine, head: p.headLine}
+			if c.feed {
+				p.turn = s.feed.turnOfCall(sidechainCall(c.path))
+				fl.parse = p.line
+			}
 			s.sides[c.path] = fl
+		case fl.tail.readUpTo(c.info):
+			continue
 		}
 		if err := r.readFile(fl, roots); errors.Is(err, errReset) {
 			return err
 		}
 	}
 	return nil
+}
+
+// sidechain is a subagent transcript found on disk.
+type sidechain struct {
+	path string
+	info os.FileInfo
+	feed bool // its steps go into the feed (else it only counts usage)
+}
+
+// sidechainFiles lists the regular .jsonl files in dir whose names start
+// with prefix.
+func sidechainFiles(dir, prefix string) []sidechain {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []sidechain
+	for _, e := range ents {
+		if !e.Type().IsRegular() || !strings.HasPrefix(e.Name(), prefix) || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		if info, err := e.Info(); err == nil {
+			out = append(out, sidechain{path: filepath.Join(dir, e.Name()), info: info})
+		}
+	}
+	return out
+}
+
+// sortNewest sorts by last write, newest first (then by path).
+func sortNewest(cs []sidechain) {
+	sort.SliceStable(cs, func(i, j int) bool {
+		a, b := cs[i].info.ModTime(), cs[j].info.ModTime()
+		if !a.Equal(b) {
+			return a.After(b)
+		}
+		return cs[i].path < cs[j].path
+	})
 }
 
 // sidechainCall reads the id of the Agent tool call that started a

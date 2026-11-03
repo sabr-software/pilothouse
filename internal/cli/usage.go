@@ -39,9 +39,11 @@ func newUsageCmd() *cobra.Command {
 		Use:   "usage [--days N] [--json]",
 		Short: "Show tokens and estimated cost per day, agent, model and repo",
 		Long: `Show token use and estimated cost of your agents over the last days, from
-their transcripts, and what your rules did meanwhile. Costs are estimates
-from list prices (override them with usage.prices in config.yaml); a
-model Pilothouse has no price for counts tokens but no cost.`,
+their transcripts, and what your rules did meanwhile. Costs are what the
+tokens would cost at pay-per-token API list prices (override them with
+usage.prices in config.yaml; OpenCode's are its own), not what a
+subscription charges: list yours under usage.plans to see both. A model
+Pilothouse has no price for counts tokens but no cost.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if days < 1 || days > 90 {
@@ -67,10 +69,10 @@ model Pilothouse has no price for counts tokens but no cost.`,
 
 func printUsage(w io.Writer, in api.Insights) {
 	n := len(in.Days)
-	fmt.Fprintf(w, "Usage, last %d day%s (estimated from list prices)\n\n", n, usgPlural(n))
+	fmt.Fprintf(w, "Usage, last %d day%s (cost at API prices, not what a subscription charges)\n\n", n, usgPlural(n))
 	if in.Total == (api.Usage{}) {
-		fmt.Fprintln(w, "  No agent usage recorded yet. Pilothouse reads it from Claude Code and Codex")
-		fmt.Fprintln(w, "  transcripts while the daemon runs.")
+		fmt.Fprintln(w, "  No agent usage recorded yet. Pilothouse reads it from Claude Code, Codex and")
+		fmt.Fprintln(w, "  OpenCode while the daemon runs.")
 	} else {
 		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', tabwriter.AlignRight)
 		fmt.Fprintln(tw, "DAY\tCOST\tINPUT\tOUTPUT\tCACHE READ\tCACHE WRITE\tSESSIONS\t")
@@ -98,6 +100,18 @@ func printUsage(w io.Writer, in api.Insights) {
 			}
 			return k
 		})
+	}
+	for i, p := range in.Plans {
+		label := "Plans"
+		if i > 0 {
+			label = ""
+		}
+		fmt.Fprintf(w, "%-9s %s: %s a month (%s for these %d day%s); %s used %s at API prices\n", label, p.Name,
+			usgMoney(p.MonthlyUSD), usgMoney(p.RangeUSD), n, usgPlural(n), usgAgent(p.Agent), usgMoney(p.APIUSD))
+	}
+	if len(in.Plans) == 0 && in.Total.CostUSD > 0 {
+		fmt.Fprintln(w, "Plans     none set. On a subscription such as Claude Max? Add it under usage.plans in")
+		fmt.Fprintln(w, "          config.yaml to see what you pay beside the API-price estimate.")
 	}
 	if b := in.Budget; b != nil {
 		s := usgMoney(b.SpentUSD) + " spent"
@@ -176,6 +190,21 @@ func usgMoney(x float64) string {
 		return "<$0.01"
 	}
 	return "$" + strconv.FormatFloat(x, 'f', 2, 64)
+}
+
+// usgAgent names an agent as people know it.
+func usgAgent(a api.AgentKind) string {
+	switch a {
+	case api.AgentClaude:
+		return "Claude Code"
+	case api.AgentCodex:
+		return "Codex"
+	case api.AgentOpenCode:
+		return "OpenCode"
+	case api.AgentGrok:
+		return "Grok"
+	}
+	return string(a)
 }
 
 // usgTokens renders a count as 950, 12.3k, 4.5M.

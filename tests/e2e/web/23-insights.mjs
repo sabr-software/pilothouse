@@ -1,6 +1,7 @@
 // 23. Insights (0.2): range switch, daily chart (tooltip, keyboard,
 // table twin), cost/tokens, breakdowns, rule tiles, top rules, budget
-// states, 501 and empty states.
+// states, plans (usage.plans) beside the API-price cost, 501 and empty
+// states.
 // Run: node 23-insights.mjs (needs Go and Chrome; see v02-harness.mjs).
 import { run, startDevserver, launch, login, router, sseServer, check, sleep, PHONE, DESKTOP, watch, go, text, waitText, tap, setSize } from './v02-harness.mjs';
 import * as F from './v02-fixtures.mjs';
@@ -21,6 +22,13 @@ await run(async () => {
     if (mode === 'empty') return { json: { ...F.insights(days, w.now), total: { input_tokens: 0, output_tokens: 0, cost_usd: 0 }, days: F.insights(days, w.now).days.map((d) => ({ date: d.date, usage: { input_tokens: 0, output_tokens: 0, cost_usd: 0 }, sessions: 0, auto_allowed: 0, asked: 0, blocked: 0 })), rules: {}, by_agent: [], by_model: [], by_repo: [] } };
     if (mode === 'over') return { json: F.insights(days, w.now, { daily_usd: 5, spent_usd: 6.2, percent: 124, burn_usd_per_hour: 2.4 }) };
     if (mode === 'nobudget') return { json: { ...F.insights(days, w.now), budget: null } };
+    if (mode === 'plans') {
+      const fx = F.insights(days, w.now);
+      const claude = (fx.by_agent.find((g) => g.key === 'claude') || { usage: {} }).usage.cost_usd || 0;
+      return { json: { ...fx, plans: [
+        { name: 'Claude Max', agent: 'claude', monthly_usd: 200, range_usd: +(200 * days / 30.4375).toFixed(2), api_usd: claude },
+        { name: 'OpenCode Go', agent: 'opencode', monthly_usd: 9.99, range_usd: +(9.99 * days / 30.4375).toFixed(2), api_usd: 0 }] } };
+    }
     return { json: F.insights(days, w.now) };
   });
   await page.setViewport(PHONE);
@@ -35,6 +43,9 @@ await run(async () => {
   check('7 bars', (await page.$$eval('svg.cols .bar', (b) => b.length)) === 7);
   const hero = await text(page, '.ins-hero');
   check('hero: total est. cost, tokens and sessions', hero.includes('$' + fx7.total.cost_usd.toFixed(2)) && /tokens/.test(hero) && /sessions/.test(hero), hero.replace(/\s+/g, ' '));
+  check('hero: the cost is labelled as API prices', (await text(page, '.ins-hero-label')).startsWith('At API prices'));
+  check('no plans → how to add one', (await text(page, '.ins-plans.none')).includes('usage.plans'));
+  check('the note says it isn’t what a subscription charges', (await text(page, '.ins-note')).includes('not what a subscription charges'));
   check('peak day labelled on its cap', (await page.$$eval('svg.cols .cap', (c) => c.length)) === 1);
   check('chart has a title and description', await page.$eval('svg.cols', (s) => !!s.querySelector('title') && s.querySelector('desc').textContent.includes('Highest')));
 
@@ -112,6 +123,20 @@ await run(async () => {
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.ins-budget', { timeout: 8000 });
   check('no budget → how to set one', (await text(page, '.ins-budget')).includes('daily_budget_usd'));
+
+  // ---- Plans ----
+  mode = 'plans';
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.ins-plans:not(.none)', { timeout: 8000 });
+  const plans = (await text(page, '.ins-plans')).replace(/\s+/g, ' ');
+  check('plans: total a month and for the range', plans.includes('What you pay') && plans.includes('$210 a month') && plans.includes('≈ $621 for the last 90 days'), plans);
+  check('plans: each with what its agent used at API prices', plans.includes('Claude Max') && plans.includes('$200/mo') && plans.includes('$9.99/mo') && /covers Claude Code: \$[\d.,]+K? at API prices/.test(plans) && plans.includes('OpenCode Go') && plans.includes('covers OpenCode: $0 at API prices'), plans);
+  check('plans: the agent breakdown names the plan', (await text(page, '.hbars')).includes('Claude Max') && !!(await page.$('.hbar-label .plan-chip')));
+  await setSize(page, { ...PHONE, width: 320 });
+  await page.waitForSelector('.ins-plans:not(.none)', { timeout: 8000 });
+  await sleep(200);
+  check('plans: no sideways scroll at 320 px', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  await setSize(page, PHONE);
 
   // ---- Empty and unsupported ----
   mode = 'empty';

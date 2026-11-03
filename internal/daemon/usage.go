@@ -10,6 +10,7 @@ import (
 	"github.com/sabr-software/pilothouse/internal/api"
 	"github.com/sabr-software/pilothouse/internal/core"
 	"github.com/sabr-software/pilothouse/internal/store"
+	"github.com/sabr-software/pilothouse/internal/transcript"
 )
 
 // The usage loop (F6): every few seconds it reads what live sessions'
@@ -90,6 +91,13 @@ func (d *Daemon) refreshUsage(ctx context.Context, backfill bool) {
 				continue
 			}
 		}
+		if s.Agent == api.AgentOpenCode {
+			// OpenCode keeps sessions in its database, priced by itself.
+			if days, err := transcript.ReadOpenCodeDays(transcript.OpenCodeDB(), s.AgentSessionID, st.loc); err == nil {
+				rows = appendUsageRows(rows, s, days)
+			}
+			continue
+		}
 		hadPath := s.TranscriptPath != "" || st.foundPath(s.ID) != ""
 		src, _, ok := st.source(s, now)
 		if !ok {
@@ -102,14 +110,7 @@ func (d *Daemon) refreshUsage(ctx context.Context, backfill bool) {
 		if err != nil {
 			continue
 		}
-		for _, du := range res.Days {
-			if du.Tokens.Zero() && du.Turns == 0 {
-				continue
-			}
-			rows = append(rows, store.UsageRow{SessionID: s.ID, Day: du.Day, Agent: s.Agent, Model: du.Model,
-				Repo: s.RepoRoot, Input: du.Tokens.Input, Output: du.Tokens.Output, CacheRead: du.Tokens.CacheRead,
-				CacheWrite: du.Tokens.CacheWrite, Reasoning: du.Tokens.Reasoning, CostUSD: du.CostUSD, Turns: du.Turns})
-		}
+		rows = appendUsageRows(rows, s, res.Days)
 		u := res.Usage
 		newPath := !hadPath && s.ExitedAt == nil // a found transcript changes caps.activity
 		if (u != (api.Usage{}) && (s.Usage == nil || *s.Usage != u) && st.maySave(s.ID, now, d.usageSaveGap())) || newPath {
@@ -148,6 +149,19 @@ func (d *Daemon) refreshUsage(ctx context.Context, backfill bool) {
 	}
 	st.markSaved(changed, now)
 	d.checkBudget(ctx, now)
+}
+
+// appendUsageRows adds a session's days that used something.
+func appendUsageRows(rows []store.UsageRow, s api.Session, days []transcript.DayUsage) []store.UsageRow {
+	for _, du := range days {
+		if du.Tokens.Zero() && du.Turns == 0 {
+			continue
+		}
+		rows = append(rows, store.UsageRow{SessionID: s.ID, Day: du.Day, Agent: s.Agent, Model: du.Model,
+			Repo: s.RepoRoot, Input: du.Tokens.Input, Output: du.Tokens.Output, CacheRead: du.Tokens.CacheRead,
+			CacheWrite: du.Tokens.CacheWrite, Reasoning: du.Tokens.Reasoning, CostUSD: du.CostUSD, Turns: du.Turns})
+	}
+	return rows
 }
 
 func (st *activityState) foundPath(id string) string {
@@ -220,10 +234,10 @@ func (d *Daemon) checkBudget(ctx context.Context, now time.Time) {
 	n := core.Notification{Kind: notifyBudget, Remote: true}
 	if level == 100 {
 		n.Title = "Today's agent budget is used up"
-		n.Body = fmt.Sprintf("Agents have spent an estimated $%.2f of your $%.2f daily budget. Pilothouse doesn't stop them: see `pilothouse usage`.", spent, budget)
+		n.Body = fmt.Sprintf("Agents have used an estimated $%.2f at API prices, against your $%.2f daily budget. Pilothouse doesn't stop them: see `pilothouse usage`.", spent, budget)
 	} else {
 		n.Title = "Agents used 80% of today's budget"
-		n.Body = fmt.Sprintf("An estimated $%.2f of your $%.2f daily budget is spent.", spent, budget)
+		n.Body = fmt.Sprintf("An estimated $%.2f of your $%.2f daily budget is used, at API prices.", spent, budget)
 	}
 	d.log.Info("budget alert", "percent", level, "spent_usd", fmt.Sprintf("%.2f", spent), "budget_usd", budget)
 	d.notify(n)

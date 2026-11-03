@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"sync"
@@ -141,5 +142,43 @@ func TestDesktop(t *testing.T) {
 		if c.Validate() == nil {
 			t.Fatalf("accepted %+v", c.Desktop)
 		}
+	}
+}
+
+func TestUsagePlans(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("PILOTHOUSE_HOME", home)
+	yml := "usage:\n  plans:\n    - name: Claude Max\n      agent: claude\n      monthly_usd: 200\n    - name: OpenCode Go\n      agent: opencode\n      monthly_usd: 10\n"
+	if err := os.WriteFile(paths.Config(), []byte(yml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load()
+	if err != nil || len(c.Usage.Plans) != 2 || c.Usage.Plans[0] != (Plan{Name: "Claude Max", Agent: "claude", MonthlyUSD: 200}) ||
+		c.Usage.Plans[1].Agent != "opencode" {
+		t.Fatalf("%+v %v", c.Usage.Plans, err)
+	}
+	for _, bad := range []Plan{
+		{Name: "Max", Agent: "anthropic", MonthlyUSD: 200},
+		{Name: "", Agent: "claude", MonthlyUSD: 200},
+		{Name: "  ", Agent: "claude", MonthlyUSD: 200},
+		{Name: "two\nlines", Agent: "claude", MonthlyUSD: 200},
+		{Name: strings.Repeat("x", 61), Agent: "claude", MonthlyUSD: 200},
+		{Name: "Max", Agent: "claude", MonthlyUSD: -1},
+		{Name: "Max", Agent: "claude", MonthlyUSD: math.NaN()},
+		{Name: "Max", Agent: "claude", MonthlyUSD: math.Inf(1)},
+	} {
+		c := Default()
+		c.Usage.Plans = []Plan{bad}
+		if c.Validate() == nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+	c = Default()
+	c.Usage.Plans = make([]Plan, maxPlans+1)
+	for i := range c.Usage.Plans {
+		c.Usage.Plans[i] = Plan{Name: "p", Agent: "codex"}
+	}
+	if c.Validate() == nil {
+		t.Error("accepted too many plans")
 	}
 }

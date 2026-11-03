@@ -340,17 +340,30 @@ type BudgetStatus struct {
 	BurnUSDh float64 `json:"burn_usd_per_hour"` // last hour
 }
 
-// Insights is the dashboard data for a range.
+// InsightsPlan is a flat monthly plan (usage.plans), beside what the
+// agent it covers used in the range at API prices.
+type InsightsPlan struct {
+	Name       string    `json:"name"`
+	Agent      AgentKind `json:"agent"`
+	MonthlyUSD float64   `json:"monthly_usd"`
+	RangeUSD   float64   `json:"range_usd"` // the monthly price over the range's days
+	APIUSD     float64   `json:"api_usd"`   // the agent's usage in the range at API prices
+}
+
+// Insights is the dashboard data for a range. Costs are estimates at API
+// prices (OpenCode: its own), not what a subscription charges: Plans
+// says what those cost.
 type Insights struct {
-	From    time.Time     `json:"from"`
-	To      time.Time     `json:"to"`
-	Total   Usage         `json:"total"`
-	Days    []InsightsDay `json:"days"`
-	ByAgent []UsageGroup  `json:"by_agent"`
-	ByModel []UsageGroup  `json:"by_model"`
-	ByRepo  []UsageGroup  `json:"by_repo"`
-	Rules   RuleStats     `json:"rules"`
-	Budget  *BudgetStatus `json:"budget,omitempty"`
+	From    time.Time      `json:"from"`
+	To      time.Time      `json:"to"`
+	Total   Usage          `json:"total"`
+	Days    []InsightsDay  `json:"days"`
+	ByAgent []UsageGroup   `json:"by_agent"`
+	ByModel []UsageGroup   `json:"by_model"`
+	ByRepo  []UsageGroup   `json:"by_repo"`
+	Rules   RuleStats      `json:"rules"`
+	Budget  *BudgetStatus  `json:"budget,omitempty"`
+	Plans   []InsightsPlan `json:"plans"`
 }
 
 // ---------- Rules (F5) ----------

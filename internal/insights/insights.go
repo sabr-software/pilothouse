@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/config"
 	"github.com/sabr-software/pilothouse/internal/store"
 )
 
@@ -60,7 +61,11 @@ type Input struct {
 	Events    []store.DecisionRow // decision events in the range
 	BudgetUSD float64             // usage.daily_budget_usd (0: none)
 	BurnUSDh  float64             // estimated spend in the last hour
+	Plans     []config.Plan       // usage.plans
 }
+
+// daysPerMonth turns a monthly price into a daily one.
+const daysPerMonth = 365.25 / 12
 
 // Build aggregates usage and decisions. Budget is always set: DailyUSD 0
 // means no budget is configured, and the spend and burn rate still show.
@@ -113,6 +118,18 @@ func Build(in Input) api.Insights {
 		b.Percent = math.Round(b.SpentUSD/b.DailyUSD*1000) / 10
 	}
 	out.Budget = b
+
+	out.Plans = []api.InsightsPlan{}
+	for _, p := range in.Plans {
+		ip := api.InsightsPlan{Name: strings.TrimSpace(p.Name), Agent: api.AgentKind(p.Agent), MonthlyUSD: p.MonthlyUSD,
+			RangeUSD: round2(p.MonthlyUSD * float64(len(out.Days)) / daysPerMonth)}
+		for _, g := range out.ByAgent {
+			if g.Key == p.Agent {
+				ip.APIUSD = round2(g.Usage.CostUSD)
+			}
+		}
+		out.Plans = append(out.Plans, ip)
+	}
 	return out
 }
 

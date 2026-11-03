@@ -456,6 +456,21 @@ dialog.sheet p { margin: 8px 0 0; color: var(--text-2); font-size: 14.5px; overf
 .ins-hero-label { margin: 0; color: var(--text-2); font-size: 13.5px; font-weight: 600; }
 .ins-hero-value { margin: 4px 0 0; font-size: 48px; font-weight: 720; line-height: 1.05; letter-spacing: -0.03em; }
 .ins-hero-sub { margin: 6px 0 0; color: var(--text-3); font-size: 14px; }
+.ins-aside { display: grid; gap: 10px; min-width: 0; }
+.ins-plans { padding: 14px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.ins-plans.none p { display: grid; gap: 2px; margin: 0; font-size: 13.5px; }
+.ins-plans.none span { color: var(--text-3); font-size: 13px; }
+.ins-plans-t { margin: 0; color: var(--text-2); font-size: 13.5px; font-weight: 600; }
+.ins-plans-v { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; margin: 4px 0 0; color: var(--text-2); font-size: 14px; }
+.ins-plans-v b { color: var(--text); font-size: 22px; font-weight: 700; letter-spacing: -0.015em; }
+.ins-plans-v span { margin-left: auto; color: var(--text-3); font-size: 13px; font-variant-numeric: tabular-nums; }
+.ins-plans-list { display: grid; gap: 8px; margin: 10px 0 0; padding: 10px 0 0; border-top: 1px solid var(--border); list-style: none; }
+.ins-plans-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 8px; font-size: 13.5px; }
+.ins-plan-name { display: inline-flex; align-items: center; gap: 7px; min-width: 0; font-weight: 600; }
+.ins-plan-name .agent-dot { margin-right: 0; }
+.ins-plan-v { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.ins-plan-use { grid-column: 1 / -1; padding-left: 15px; color: var(--text-3); font-size: 12.5px; }
+.plan-chip { margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 11.5px; font-weight: 600; white-space: nowrap; }
 .ins-budget { padding: 14px; border-radius: var(--radius-sm); background: var(--surface-2); }
 .ins-budget.none p { display: grid; gap: 2px; margin: 0; font-size: 13.5px; }
 .ins-budget.none span { color: var(--text-3); font-size: 13px; }
@@ -507,7 +522,7 @@ svg.cols:focus-visible { box-shadow: var(--ring); }
 .hbars { display: grid; gap: 14px; margin: 8px 0 4px; padding: 0; list-style: none; }
 .hbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "l v" "t t"; align-items: end; gap: 5px 12px; }
 .hbar-label { grid-area: l; display: flex; align-items: center; min-width: 0; color: var(--text); font-size: 14px; font-weight: 550; }
-.hbar-label > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-label > span:not(.agent-dot):not(.plan-chip) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hbar-label .mono { font-size: 13px; }
 .hbar-v { grid-area: v; display: flex; align-items: baseline; gap: 8px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .hbar-v b { color: var(--text); font-size: 14px; font-weight: 650; }

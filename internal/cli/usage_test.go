@@ -122,7 +122,7 @@ func TestUsageCommand(t *testing.T) {
 		t.Fatal(err, out)
 	}
 	usgContains(t, out,
-		"Usage, last 3 days (estimated from list prices)",
+		"Usage, last 3 days (cost at API prices, not what a subscription charges)",
 		"Wed Oct 21", "$1.50", "12.3k", "4.5k", "Fri Oct 23", "2.0M",
 		"Total", "$7.50", "9.0M",
 		"Cost per day  ▃▁█  (Wed Oct 21 … Fri Oct 23)",
@@ -133,12 +133,26 @@ func TestUsageCommand(t *testing.T) {
 		`120 auto-allowed (4 by "allow for session") · 14 asked you · 3 blocked`,
 		"9 answered on a device, 4 at the terminal, 1 expired · median answer 42s · agents waited 12.5 min",
 		"Blocked   Run: git push -f (2)",
+		"Plans     none set. On a subscription such as Claude Max?",
 	)
 	if strings.Contains(out, "/home/dev") {
 		t.Error("repos show by name")
 	}
 	if d.days[0] != "3" {
 		t.Errorf("days sent = %q", d.days)
+	}
+
+	d.insights.Plans = []api.InsightsPlan{{Name: "Claude Max", Agent: api.AgentClaude, MonthlyUSD: 200, RangeUSD: 19.71, APIUSD: 6},
+		{Name: "OpenCode Go", Agent: api.AgentOpenCode, MonthlyUSD: 10, RangeUSD: 0.99}}
+	out, err = usgRun(t, context.Background(), "usage", "--days", "3")
+	if err != nil {
+		t.Fatal(err, out)
+	}
+	usgContains(t, out,
+		"Plans     Claude Max: $200.00 a month ($19.71 for these 3 days); Claude Code used $6.00 at API prices",
+		"          OpenCode Go: $10.00 a month ($0.99 for these 3 days); OpenCode used $0 at API prices")
+	if strings.Contains(out, "none set") {
+		t.Error("the hint shows with plans set")
 	}
 
 	out, err = usgRun(t, context.Background(), "usage", "--json")

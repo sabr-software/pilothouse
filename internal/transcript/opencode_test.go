@@ -3,6 +3,8 @@ package transcript
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"math"
 	"path/filepath"
 	"testing"
 	"time"
@@ -77,6 +79,52 @@ func TestReadOpenCode(t *testing.T) {
 	}
 }
 
+func TestReadOpenCodeDays(t *testing.T) {
+	db, path := openTestOpenCode(t)
+	loc := time.FixedZone("CST", -6*3600)
+	day1 := time.Date(2026, 11, 1, 23, 0, 0, 0, loc).UnixMilli() // 05:00 UTC on 2 Nov
+	day2 := time.Date(2026, 11, 2, 9, 0, 0, 0, loc).UnixMilli()
+	mustExec(t, db, `INSERT INTO session (id) VALUES ('ses_main'), ('ses_other')`)
+	mustExec(t, db, `INSERT INTO session (id, parent_id) VALUES ('ses_child', 'ses_main')`)
+	msg := func(id, sid string, at int64, data string) {
+		mustExec(t, db, `INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)`, id, sid, at, at, data)
+	}
+	asst := func(model string, cost float64, in, out, reason, cr, cw int) string {
+		return fmt.Sprintf(`{"role":"assistant","modelID":%q,"cost":%v,"tokens":{"input":%d,"output":%d,"reasoning":%d,"cache":{"read":%d,"write":%d}}}`,
+			model, cost, in, out, reason, cr, cw)
+	}
+	msg("m1", "ses_main", day1, `{"role":"user"}`)
+	msg("m2", "ses_main", day1+1000, asst("deepseek-v4.1-flash", 0.002, 10, 5, 3, 1000, 0))
+	msg("m3", "ses_child", day1+2000, `{"role":"user"}`) // a subagent's task: not a turn
+	msg("m4", "ses_child", day1+3000, asst("deepseek-v4.1-flash", 0.001, 20, 1, 0, 500, 0))
+	msg("m5", "ses_main", day2, `{"role":"user"}`)
+	msg("m6", "ses_main", day2+1000, asst("qwen3.6:27b", 0, 7, 7, 0, 0, 0))
+	msg("m7", "ses_other", day2, asst("deepseek-v4.1-flash", 9, 999, 999, 0, 0, 0))
+	msg("m8", "ses_main", day2+2000, `not json`)
+
+	days, err := ReadOpenCodeDays(path, "ses_main", loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []DayUsage{
+		{Day: "2026-11-01", Model: "deepseek-v4.1-flash", Tokens: Tokens{Input: 30, Output: 6, Reasoning: 3, CacheRead: 1500}, CostUSD: 0.003, Turns: 1},
+		{Day: "2026-11-02", Model: "qwen3.6:27b", Tokens: Tokens{Input: 7, Output: 7}, Turns: 1},
+	}
+	if len(days) != len(want) {
+		t.Fatalf("days = %+v", days)
+	}
+	for i := range want {
+		g := days[i]
+		if g.Day != want[i].Day || g.Model != want[i].Model || g.Tokens != want[i].Tokens || g.Turns != want[i].Turns ||
+			math.Abs(g.CostUSD-want[i].CostUSD) > 1e-9 {
+			t.Errorf("day %d = %+v, want %+v", i, g, want[i])
+		}
+	}
+	if _, err := ReadOpenCodeDays(filepath.Join(t.TempDir(), "none.db"), "ses_main", loc); !IsMissing(err) {
+		t.Errorf("missing database: err = %v", err)
+	}
+}
+
 func openTestOpenCode(t *testing.T) (*sql.DB, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "opencode.db")
@@ -86,7 +134,7 @@ func openTestOpenCode(t *testing.T) (*sql.DB, string) {
 	}
 	t.Cleanup(func() { db.Close() })
 	for _, q := range []string{
-		`CREATE TABLE session (id TEXT PRIMARY KEY, cost REAL, tokens_input INTEGER, tokens_output INTEGER,
+		`CREATE TABLE session (id TEXT PRIMARY KEY, parent_id TEXT, cost REAL, tokens_input INTEGER, tokens_output INTEGER,
 			tokens_reasoning INTEGER, tokens_cache_read INTEGER, tokens_cache_write INTEGER, model TEXT)`,
 		`CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT)`,
 		`CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT)`,

@@ -1,5 +1,6 @@
 // Insights (F6; workstream I): usage and estimated cost over 7/30/90
 // days, by agent/model/repo, what the rules did, and today's budget.
+// Costs are at API prices; usage.plans says what subscriptions cost.
 // Charts are inline SVG built here (no chart library), each with a
 // table twin, keyboard focus and a tooltip that never gates a value.
 // Colours are the --viz-* tokens in views.css (validated against both
@@ -26,6 +27,8 @@ function svg(tag, attrs, ...kids) {
 const dayDate = (d) => new Date(d + 'T12:00:00');
 const fmtDay = (d, opts) => dayDate(d).toLocaleDateString([], opts);
 const fmtCount = (n) => (n >= 10000 ? fmtTokens(n) : whole.format(n || 0));
+// A plan's price: "$10", "$9.99".
+const fmtPrice = (x) => (Number.isInteger(Number(x)) ? '$' + whole.format(Number(x)) : fmtUSD(x));
 function fmtMinutes(m) {
   m = Number(m) || 0;
   if (m < 1) return m > 0 ? '<1 min' : '0 min';
@@ -70,7 +73,7 @@ export function insightsView() {
   add(root,
     h('div', { class: 'page-head' }, h('div', null,
       h('h1', { class: 'page-title' }, 'Insights'),
-      h('p', { class: 'page-sub' }, 'Usage, estimated cost and what your rules did'))),
+      h('p', { class: 'page-sub' }, 'Usage, cost at API prices and what your rules did'))),
     h('div', { class: 'ins-filters' }, rangeSeg.el, metricSeg.el),
     body);
 
@@ -132,19 +135,38 @@ export function insightsView() {
     fill(body,
       h('section', { class: 'card ins-hero', 'aria-label': 'Totals' },
         h('div', { class: 'ins-hero-main' },
-          h('p', { class: 'ins-hero-label' }, metric === 'cost' ? `Estimated cost · ${range}` : `Tokens · ${range}`),
+          h('p', { class: 'ins-hero-label' }, metric === 'cost' ? `At API prices · ${range}` : `Tokens · ${range}`),
           h('p', { class: 'ins-hero-value' }, metric === 'cost' ? fmtUSD(d.total.cost_usd) : fmtTokens(tokens)),
           h('p', { class: 'ins-hero-sub' },
-            metric === 'cost' ? `${fmtTokens(tokens)} tokens` : `≈ ${fmtUSD(d.total.cost_usd)} estimated`,
+            metric === 'cost' ? `${fmtTokens(tokens)} tokens` : `≈ ${fmtUSD(d.total.cost_usd)} at API prices`,
             ` · ${whole.format(sessions)} ${sessions === 1 ? 'session' : 'sessions'}`)),
-        budgetEl(d.budget)),
+        h('div', { class: 'ins-aside' }, plansEl(d.plans || [], range), budgetEl(d.budget))),
       dailyChart(list, d),
       breakdown(d),
       h('section', { class: 'section', 'aria-labelledby': 'rules-h' },
         h('h2', { class: 'section-head', id: 'rules-h' }, 'What the rules did'),
         ruleTiles(d.rules || {}, list)),
       topLists(d.rules || {}),
-      h('p', { class: 'ins-note' }, ico('info', 'sm'), 'Costs are estimates from list prices and leave out models Pilothouse doesn’t know.'));
+      h('p', { class: 'ins-note' }, ico('info', 'sm'),
+        'Costs are what these tokens would cost at pay-per-token API prices (OpenCode’s are its own), not what a subscription charges. Models Pilothouse has no price for count tokens but no cost.'));
+  }
+
+  // ---- Plans ----
+  function plansEl(plans, range) {
+    if (!plans.length) {
+      return h('div', { class: 'ins-plans none' },
+        h('p', null, h('b', null, 'On a monthly plan?'),
+          h('span', null, 'Add it under usage.plans in config.yaml to see what you pay beside the API-price estimate.')));
+    }
+    const sum = (k) => plans.reduce((n, p) => n + (Number(p[k]) || 0), 0);
+    return h('div', { class: 'ins-plans' },
+      h('p', { class: 'ins-plans-t' }, 'What you pay'),
+      h('p', { class: 'ins-plans-v' }, h('b', null, fmtPrice(sum('monthly_usd'))), ' a month',
+        h('span', null, `≈ ${fmtUSD(sum('range_usd'))} for ${range}`)),
+      h('ul', { class: 'ins-plans-list' }, plans.map((p) => h('li', null,
+        h('span', { class: 'ins-plan-name' }, h('span', { class: 'agent-dot ' + agentClass(p.agent) }), p.name),
+        h('span', { class: 'ins-plan-v' }, `${fmtPrice(p.monthly_usd)}/mo`),
+        h('span', { class: 'ins-plan-use' }, `covers ${agentName(p.agent)}: ${fmtUSD(p.api_usd)} at API prices`)))));
   }
 
   // ---- Budget ----
@@ -174,7 +196,7 @@ export function insightsView() {
   function dailyChart(list, d) {
     const val = (x) => (metric === 'cost' ? (x.usage && x.usage.cost_usd) || 0 : totalTokens(x.usage));
     const fmt = metric === 'cost' ? fmtUSD : fmtTokens;
-    const title = metric === 'cost' ? 'Estimated cost per day' : 'Tokens per day';
+    const title = metric === 'cost' ? 'Cost per day at API prices' : 'Tokens per day';
     const wrap = h('div', { class: 'chart' });
     const tip = h('div', { class: 'chart-tip', role: 'status', 'aria-live': 'polite', hidden: true });
     const tableBtn = h('button', { class: 'linkish', type: 'button', 'aria-expanded': String(showTable), 'aria-controls': 'daily-table' }, showTable ? 'Hide table' : 'Show as table');
@@ -313,7 +335,7 @@ export function insightsView() {
     return h('table', { class: 'ins-table' },
       h('caption', { class: 'sr-only' }, 'Usage and decisions per day'),
       h('thead', null, h('tr', null,
-        ['Day', 'Est. cost', 'Tokens', 'Sessions', 'Auto-allowed', 'Asked', 'Blocked'].map((c, i) => h('th', { scope: 'col', class: i ? 'num' : '' }, c)))),
+        ['Day', 'API-price cost', 'Tokens', 'Sessions', 'Auto-allowed', 'Asked', 'Blocked'].map((c, i) => h('th', { scope: 'col', class: i ? 'num' : '' }, c)))),
       h('tbody', null, list.slice().reverse().map((x) => h('tr', null,
         h('th', { scope: 'row' }, fmtDay(x.date, { weekday: 'short', month: 'short', day: 'numeric' })),
         h('td', { class: 'num' }, fmtUSD(x.usage && x.usage.cost_usd)),
@@ -330,6 +352,7 @@ export function insightsView() {
     const val = (g) => (metric === 'cost' ? g.usage.cost_usd || 0 : totalTokens(g.usage));
     const fmt = metric === 'cost' ? fmtUSD : fmtTokens;
     const listEl = h('div', { class: 'hbars' });
+    const planOf = new Map((d.plans || []).map((p) => [p.agent, p.name]));
     const seg = radioSeg('Group by', 'by', [['agent', 'Agent'], ['model', 'Model'], ['repo', 'Repo']], by, (v) => { by = v; draw(); }, 'small');
     function draw() {
       let rows = (groups[by] || []).filter((g) => g && g.usage).slice().sort((a, b) => val(b) - val(a));
@@ -355,7 +378,8 @@ export function insightsView() {
         return h('div', { class: 'hbar' },
           h('span', { class: 'hbar-label' },
             by === 'agent' && !g.other ? h('span', { class: 'agent-dot ' + agentClass(g.key) }) : null,
-            h('span', { class: by === 'model' ? 'mono' : '' }, name)),
+            h('span', { class: by === 'model' ? 'mono' : '' }, name),
+            by === 'agent' && planOf.has(g.key) ? h('span', { class: 'plan-chip' }, planOf.get(g.key)) : null),
           h('span', { class: 'hbar-track' }, bar),
           h('span', { class: 'hbar-v' }, h('b', null, fmt(v)), h('span', null, `${g.sessions || 0} ${g.sessions === 1 ? 'session' : 'sessions'}`)));
       }));

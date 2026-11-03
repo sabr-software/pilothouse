@@ -108,23 +108,27 @@ pilothouse log -f                # live event log
 
 ### Usage and cost
 
-Pilothouse reads Claude Code and Codex transcripts (read-only, on this machine)
-to show each session's activity and token use, and estimates cost from list
-prices. OpenCode activity and session tokens/cost are read from its own SQLite
-database; OpenCode is not yet included in the global usage page. Set a daily
-budget to get a notification at 80 % and 100 % of it:
+Pilothouse reads Claude Code and Codex transcripts, subagents and workflow
+agents included, and OpenCode's own database (read-only, on this machine) to
+show each session's activity and token use. Cost is what those tokens would
+cost at pay-per-token API list prices (OpenCode prices its own), **not what a
+subscription charges**: list your plans to see what you pay beside it. Set a
+daily budget to get a notification at 80 % and 100 % of it:
 
 ```yaml
 # ~/.pilothouse/config.yaml
 usage:
+  plans:                         # flat monthly subscriptions, shown beside the API-price estimate
+    - { name: Claude Max, agent: claude, monthly_usd: 200 }
+    - { name: OpenCode Go, agent: opencode, monthly_usd: 10 }
   daily_budget_usd: 20
   prices:                        # USD per million tokens; overrides the built-in list prices
     claude-opus-5-5: { input: 4, output: 20, cache_read: 0.2, cache_write: 5 }
 ```
 
-Estimates use public list prices; plans and discounts aren't known to
-Pilothouse. See [docs/USAGE.md](docs/USAGE.md) for what is read, how it is
-counted and where the prices come from.
+Discounts and negotiated rates aren't known to Pilothouse. See
+[docs/USAGE.md](docs/USAGE.md) for what is read, how it is counted and where
+the prices come from.
 
 ### Phone
 
@@ -328,7 +332,7 @@ computer, in a new [herdr](https://herdr.dev) tab (or a Terminal window);
 | Ask rules | ✓ (its prompt) | denied with a note (no prompt from a hook) | held for you in Pilothouse, at the desk too | forces Grok's own prompt (at the desk only) |
 | Remote approvals | ✓ | ✓ | ✓ | — (no permission hook) |
 | Questions from anywhere | ✓ (and plans) | shown, answered in the terminal | ✓ | answered in its terminal |
-| Activity and usage | ✓ | ✓ | activity + session cost | activity only |
+| Activity and usage | ✓ | ✓ | ✓ (OpenCode's own cost) | activity only |
 
 v0.1 supported **Claude Code** and **Codex**; 0.2 added Claude Code questions
 and plan approval from anywhere, and **OpenCode** (1.x) through a plugin.

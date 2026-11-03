@@ -74,6 +74,10 @@ type Config struct {
 		// Prices overrides or adds per-model list prices in USD per million
 		// tokens, keyed by model id prefix (e.g. "claude-sonnet-5").
 		Prices map[string]ModelPrice `yaml:"prices"`
+		// Plans are flat monthly subscriptions (Claude Max, ChatGPT Pro,
+		// OpenCode Go…). Insights shows what they cost beside the
+		// API-price estimate of the agent each one covers.
+		Plans []Plan `yaml:"plans"`
 	} `yaml:"usage"`
 
 	// KeepAwake stops the computer from sleeping while agents work:
@@ -131,6 +135,16 @@ type ModelPrice struct {
 	CacheRead  float64 `yaml:"cache_read"`
 	CacheWrite float64 `yaml:"cache_write"`
 }
+
+// Plan is a flat monthly subscription that covers one agent's usage.
+type Plan struct {
+	Name       string  `yaml:"name"`        // e.g. "Claude Max"
+	Agent      string  `yaml:"agent"`       // claude, codex, opencode or grok
+	MonthlyUSD float64 `yaml:"monthly_usd"` // what it costs a month
+}
+
+// maxPlans bounds usage.plans.
+const maxPlans = 20
 
 // Keep-awake modes.
 const (
@@ -228,6 +242,22 @@ func (c *Config) Validate() error {
 	}
 	if c.Usage.DailyBudgetUSD < 0 {
 		return errors.New("usage.daily_budget_usd must not be negative")
+	}
+	if len(c.Usage.Plans) > maxPlans {
+		return fmt.Errorf("usage.plans: at most %d plans", maxPlans)
+	}
+	for i, p := range c.Usage.Plans {
+		switch p.Agent {
+		case "claude", "codex", "opencode", "grok":
+		default:
+			return fmt.Errorf("usage.plans[%d].agent must be claude, codex, opencode or grok, got %q", i, p.Agent)
+		}
+		if n := strings.TrimSpace(p.Name); n == "" || len(n) > 60 || strings.ContainsAny(n, "\n\r\x00") {
+			return fmt.Errorf("usage.plans[%d].name must be a short name such as \"Claude Max\"", i)
+		}
+		if !(p.MonthlyUSD >= 0 && p.MonthlyUSD <= 100_000) {
+			return fmt.Errorf("usage.plans[%d].monthly_usd must be between 0 and 100000", i)
+		}
 	}
 	return nil
 }

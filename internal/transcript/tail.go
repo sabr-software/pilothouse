@@ -193,6 +193,14 @@ func (s *scanner) scan(f *os.File, from, to int64, fn lineFunc) error {
 
 // sameHead reports whether the file still starts with the bytes it
 // started with when first read.
+// readUpTo reports whether everything in the file st describes was
+// already read: the same file, with the same size and modification time
+// as when last read, and nothing left past the offset.
+func (t *tail) readUpTo(st os.FileInfo) bool {
+	return t.info != nil && st != nil && os.SameFile(t.info, st) && st.Size() == t.info.Size() &&
+		st.ModTime().Equal(t.info.ModTime()) && t.off >= st.Size()
+}
+
 func (t *tail) sameHead(f *os.File) bool {
 	if len(t.head) == 0 {
 		return true

@@ -259,6 +259,15 @@ func (c *Core) Insights(ctx context.Context, q api.InsightsQuery) (api.Insights,
 		Percent:  math.Round(spent/DailyBudgetUSD*1000) / 10,
 		BurnUSDh: round2(spent / hours * 1.6), // the afternoon is busier than the night
 	}
+	// The demo machine has Claude Max; its other agents pay per token.
+	plan := api.InsightsPlan{Name: "Claude Max", Agent: api.AgentClaude, MonthlyUSD: 200,
+		RangeUSD: round2(200 * float64(days) / (365.25 / 12))}
+	for _, g := range in.ByAgent {
+		if g.Key == string(api.AgentClaude) {
+			plan.APIUSD = round2(g.Usage.CostUSD)
+		}
+	}
+	in.Plans = []api.InsightsPlan{plan}
 	return in, nil
 }
 

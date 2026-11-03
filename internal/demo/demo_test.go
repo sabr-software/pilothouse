@@ -557,6 +557,14 @@ func TestInsightsAddUp(t *testing.T) {
 		if len(in.Days) != want {
 			t.Fatalf("days=%d: %d days", days, len(in.Days))
 		}
+		if len(in.Plans) != 1 || in.Plans[0].Agent != api.AgentClaude || in.Plans[0].APIUSD <= 0 || in.Plans[0].RangeUSD <= 0 {
+			t.Fatalf("days=%d: plans = %+v", days, in.Plans)
+		}
+		for _, g := range in.ByAgent {
+			if g.Key == "claude" && math.Abs(g.Usage.CostUSD-in.Plans[0].APIUSD) > 0.005 {
+				t.Errorf("days=%d: plan covers $%v, Claude used $%v", days, in.Plans[0].APIUSD, g.Usage.CostUSD)
+			}
+		}
 		var cost float64
 		var tokens int64
 		auto := 0
