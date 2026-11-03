@@ -98,12 +98,28 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 .vs:last-child::before { display: none; }
 .vm { position: relative; z-index: 1; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--text-2); border: 2px solid var(--bg); }
 .vm svg.ic { width: 14px; height: 14px; stroke-width: 2.2; }
-.vs.ok .vm { background: var(--brand-soft); color: var(--brand-text); }
+.vs.ok .vm { background: var(--brand); color: var(--brand-ink); }
 .vs.fail .vm { background: var(--warn-soft); color: var(--warn-text); }
 .vs.block .vm { background: var(--deny-soft); color: var(--deny-text); border-radius: 8px; }
 .vs.say .vm { background: var(--info-soft); color: var(--info-text); }
 .vs.end .vm { background: var(--text); color: var(--bg); }
 .vs.now .vm { background: var(--info-soft); color: var(--info-text); }
+/* Kinds at a glance: what the agent said is a speech bubble, commands
+   are terminal squares, edits and results are coloured, and reading is
+   the quietest. Smaller marks keep their centre on the dashed line. */
+.vs.say .vt2, .vs.you .vt2 { justify-self: start; max-width: 100%; margin-top: 1px; padding: 8px 13px 9px; border-radius: 4px 14px 14px 14px; }
+.vs.say .vt2 { background: color-mix(in srgb, var(--info) 7%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--info) 18%, transparent); }
+.vs.say .vt2 .vq { color: var(--text); }
+.vs.say .vq::before, .vs.say .vq::after { content: none; }
+.vs.you .vt2 { background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong); }
+.vs.you .vm { background: var(--text); color: var(--bg); }
+.vs.say .vm, .vs.read .vm { width: 24px; height: 24px; margin: 2px; border: 0; }
+.vs.say .vm svg.ic, .vs.read .vm svg.ic { width: 13px; height: 13px; }
+.vs.step.k-shell .vm { border-radius: 8px; background: var(--code-bg); color: var(--code-text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--code-text) 24%, transparent); }
+.vs.step.k-edit .vm { background: var(--brand-soft); color: var(--brand-text); }
+.vs.read .vm { background: var(--bg); color: var(--text-3); box-shadow: inset 0 0 0 1.5px var(--border-strong); }
+.vs.read .vt2 b { font-weight: 560; color: var(--text-2); }
+.view.rep .vs.read .vt2 .note { color: var(--text-3); }
 .vt2 { min-width: 0; padding-top: 4px; font-size: 14.5px; line-height: 1.4; color: var(--text); }
 .vt2 b { font-weight: 650; }
 .vs.block .vt2 b { color: var(--deny-text); } .vs.fail .vt2 b { color: var(--warn-text); }

@@ -721,7 +721,7 @@ export function sessionView(id) {
       if (it.kind === 'tool') nodes.push(toolNode(it));
       else if (it.kind === 'text' && it !== lastText) nodes.push(node('say', 'message', null, null, null, [h('q', { class: 'vq' }, oneLine(prose(it.text), 200))]));
       else if (it.kind === 'error') nodes.push(node('fail', 'alert', it.summary || 'Error', it.text ? oneLine(it.text, 160) : null));
-      else if (it.kind === 'prompt' && !it.sidechain) nodes.push(node('say', 'user', 'You said', oneLine(prose(it.text), 160)));
+      else if (it.kind === 'prompt' && !it.sidechain) nodes.push(node('you', 'user', 'You said', oneLine(prose(it.text), 160)));
       else if (it.kind === 'system') nodes.push(node('sys', 'spark', it.text || it.summary || ''));
     }
     flushReads();
