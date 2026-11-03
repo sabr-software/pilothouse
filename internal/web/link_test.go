@@ -316,7 +316,10 @@ func TestLinkMergedEventStream(t *testing.T) {
 				t.Fatalf("seq went from %d to %d", last, e.Seq)
 			}
 			last = e.Seq
-			seen[e.SessionID] = e.Seq
+			// Other events (a machine coming online) share the stream.
+			if e.SessionID == "s_laptop1" || e.SessionID == "s_studio1" {
+				seen[e.SessionID] = e.Seq
+			}
 		case <-ctx.Done():
 			t.Fatalf("events seen: %v", seen)
 		}
@@ -410,6 +413,7 @@ func TestLinkRemoveAndCodes(t *testing.T) {
 
 func TestLinkNewDeviceKeyNeedsTrust(t *testing.T) {
 	f := linkMachines(t)
+	f.followed(t)
 	trustAll(t, f.peer)
 	// The hub sends a changed key for the same device (paired again,
 	// restored): the laptop stops trusting it until confirmed again.
@@ -454,6 +458,14 @@ func TestLinkNewDeviceKeyNeedsTrust(t *testing.T) {
 	if n, _ := f.peer.srv.trustLinkDevices(ctx, []api.LinkTrustDevice{{ID: f.deviceID, Fingerprint: ds[0].Fingerprint}}); n != 0 {
 		t.Fatal("trusted a revoked device")
 	}
+}
+
+// followed waits until the hub follows the machine. Following starts by
+// sending the hub's device list, so a test that plays the hub's part in
+// that (syncLinkDevices) waits for it first, or the two race.
+func (f *linkFixture) followed(t *testing.T) {
+	t.Helper()
+	eventually(t, "the hub follows the laptop", func() bool { return hasSession(f.hub.snapshot(f.cookie), "s_laptop1") })
 }
 
 // trustAll trusts every device the machine lists, with the fingerprints shown.
@@ -665,6 +677,7 @@ func TestLinkJoinChecksCodeFirstAndNames(t *testing.T) {
 // explicit revocations still apply.
 func TestLinkDeviceListVersions(t *testing.T) {
 	f := linkMachines(t)
+	f.followed(t)
 	ctx := context.Background()
 	peer := f.peer
 	if err := peer.srv.syncLinkDevices(ctx, nil, peer.clock.Now().Add(48*time.Hour).UnixMicro()); err == nil {

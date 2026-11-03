@@ -328,6 +328,10 @@ func TestFallsBackToTerminalOnMac(t *testing.T) {
 	if err := os.Chtimes(stale, time.Now().Add(-48*time.Hour), time.Now().Add(-48*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
+	// A fixed clock: running the script below can take seconds under load,
+	// and "right away" must not depend on that.
+	start := time.Now()
+	o.Now = func() time.Time { return start }
 	res, err := o.Open(context.Background(), s)
 	if _, err := os.Stat(stale); err == nil {
 		t.Fatal("an old script was kept")

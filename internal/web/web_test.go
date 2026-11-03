@@ -80,7 +80,10 @@ func isolate(t *testing.T) string {
 
 func openDB(t *testing.T, path string) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+	// As the daemon opens it (store.DB.SQL): BEGIN takes the write lock, so
+	// a transaction that reads before it writes waits instead of failing
+	// when another one wrote meanwhile.
+	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_txlock=immediate")
 	if err != nil {
 		t.Fatal(err)
 	}
