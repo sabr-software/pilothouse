@@ -45,7 +45,11 @@ type Config struct {
 
 	Notify struct {
 		Desktop bool `yaml:"desktop"` // default true
-		Ntfy    struct {
+		// DesktopBrowser is the app a click on a desktop notification opens
+		// its page in (macOS), such as "Google Chrome": the browser you
+		// paired. Empty: the default browser.
+		DesktopBrowser string `yaml:"desktop_browser"`
+		Ntfy           struct {
 			Server string `yaml:"server"` // default https://ntfy.sh
 			Topic  string `yaml:"topic"`  // empty = off
 			Token  string `yaml:"token"`
@@ -242,6 +246,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Usage.DailyBudgetUSD < 0 {
 		return errors.New("usage.daily_budget_usd must not be negative")
+	}
+	if b := c.Notify.DesktopBrowser; len(b) > 100 || strings.ContainsAny(b, "\n\r\x00") {
+		return errors.New("notify.desktop_browser must be an app name such as \"Google Chrome\"")
 	}
 	if len(c.Usage.Plans) > maxPlans {
 		return fmt.Errorf("usage.plans: at most %d plans", maxPlans)

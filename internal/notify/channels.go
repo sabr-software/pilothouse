@@ -37,6 +37,9 @@ type Desktop struct {
 	Run      func(ctx context.Context, name string, args ...string) error
 	// Base is the web app's URL for click-through links ("" or nil: none).
 	Base func() string
+	// Browser opens the links ("": the default browser), so a click lands
+	// in the browser that is paired.
+	Browser string
 }
 
 // NewDesktop returns a Desktop for this OS.
@@ -88,14 +91,26 @@ func DesktopCommand(goos, title, body string, lookPath func(string) (string, err
 }
 
 // TerminalNotifierArgs returns terminal-notifier arguments that show
-// title/body and open link ("": nothing) on a click. group names the
-// notification: a newer one in the same group replaces it.
-func TerminalNotifierArgs(title, body, group, link string) []string {
+// title/body and open link ("": nothing) on a click, in browser ("": the
+// default browser). group names the notification: a newer one in the same
+// group replaces it.
+func TerminalNotifierArgs(title, body, group, link, browser string) []string {
 	args := []string{"-title", tnValue(clean(title, 120)), "-message", tnValue(clean(body, 300)), "-group", tnValue(group)}
-	if link != "" {
+	switch {
+	case link == "":
+	case browser != "":
+		// terminal-notifier runs -execute with /bin/sh: both words are
+		// single-quoted.
+		args = append(args, "-execute", tnValue("/usr/bin/open -a "+shQuote(browser)+" "+shQuote(link)))
+	default:
 		args = append(args, "-open", tnValue(link))
 	}
 	return args
+}
+
+// shQuote quotes s as one sh word.
+func shQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // tnValue quotes s for terminal-notifier, which reads options through
@@ -149,7 +164,7 @@ func (d *Desktop) Send(ctx context.Context, n core.Notification) error {
 			}
 			// terminal-notifier 3 exits non-zero until macOS lets it
 			// notify: osascript still shows this one.
-			if d.Run(ctx, p, TerminalNotifierArgs(n.Title, n.Body, desktopGroup(n), link)...) == nil {
+			if d.Run(ctx, p, TerminalNotifierArgs(n.Title, n.Body, desktopGroup(n), link, d.Browser)...) == nil {
 				return nil
 			}
 		}

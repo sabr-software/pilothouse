@@ -215,6 +215,7 @@ func Channels(cfg *config.Config, p Pusher, log *slog.Logger) []Channel {
 	var chans []Channel
 	if cfg.Notify.Desktop {
 		d := NewDesktop()
+		d.Browser = cfg.Notify.DesktopBrowser
 		if p != nil {
 			d.Base = p.BaseURL
 		}

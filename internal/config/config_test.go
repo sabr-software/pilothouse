@@ -182,3 +182,15 @@ func TestUsagePlans(t *testing.T) {
 		t.Error("accepted too many plans")
 	}
 }
+
+func TestNotifyDesktopBrowser(t *testing.T) {
+	c := Default()
+	c.Notify.DesktopBrowser = "Google Chrome"
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	c.Notify.DesktopBrowser = "Chrome\nrm -rf ~"
+	if err := c.Validate(); err == nil {
+		t.Fatal("a browser name with a newline was accepted")
+	}
+}

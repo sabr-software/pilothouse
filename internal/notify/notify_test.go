@@ -290,13 +290,37 @@ func TestTerminalNotifierArgsQuote(t *testing.T) {
 		`\[ZOMG]`:                             `"\\\\[ZOMG]"`,
 		"line\nbreak\tand tab":                `"line break and tab"`,
 	} {
-		if got := TerminalNotifierArgs(in, in, "g", "")[1]; got != want {
+		if got := TerminalNotifierArgs(in, in, "g", "", "")[1]; got != want {
 			t.Errorf("%q → %s, want %s", in, got, want)
 		}
 	}
-	args := TerminalNotifierArgs("t", "b", "pilothouse-s_1", "http://127.0.0.1:7517/s/s_1")
+	args := TerminalNotifierArgs("t", "b", "pilothouse-s_1", "http://127.0.0.1:7517/s/s_1", "")
 	if strings.Join(args, " ") != `-title "t" -message "b" -group "pilothouse-s_1" -open "http://127.0.0.1:7517/s/s_1"` {
 		t.Fatalf("args = %q", args)
+	}
+}
+
+// With notify.desktop_browser set, a click opens the page in that browser
+// (the one that is paired), not the default one; the shell command
+// terminal-notifier runs quotes both words.
+func TestTerminalNotifierArgsBrowser(t *testing.T) {
+	args := TerminalNotifierArgs("t", "b", "g", "https://mac.example.ts.net/s/s_1", "Google Chrome")
+	if strings.Join(args, " ") != `-title "t" -message "b" -group "g" -execute "/usr/bin/open -a 'Google Chrome' 'https://mac.example.ts.net/s/s_1'"` {
+		t.Fatalf("args = %q", args)
+	}
+	args = TerminalNotifierArgs("t", "b", "g", "https://x/s/1", `Bob's "Browser"; rm -rf ~`)
+	if got := args[len(args)-1]; got != `"/usr/bin/open -a 'Bob'\\''s \"Browser\"; rm -rf ~' 'https://x/s/1'"` {
+		t.Fatalf("hostile browser = %s", got)
+	}
+	if args := TerminalNotifierArgs("t", "b", "g", "", "Google Chrome"); len(args) != 6 {
+		t.Fatalf("no link, no click action: %q", args)
+	}
+	cfg := config.Default()
+	cfg.Notify.DesktopBrowser = "Google Chrome"
+	for _, ch := range Channels(cfg, nil, nil) {
+		if d, ok := ch.(*Desktop); ok && d.Browser != "Google Chrome" {
+			t.Fatalf("browser = %q", d.Browser)
+		}
 	}
 }
 
