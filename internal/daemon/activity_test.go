@@ -214,6 +214,9 @@ func TestActivityFindsCodexRollout(t *testing.T) {
 	if s.Caps.Activity {
 		t.Fatal("caps.activity before the rollout exists")
 	}
+	if act, err := h.c.Activity(bg, "s_codex", api.ActivityQuery{}); err != nil || act.Available {
+		t.Fatalf("activity before the rollout exists = %+v, %v", act, err)
+	}
 	dir := filepath.Join(os.Getenv("PILOTHOUSE_USER_HOME"), ".codex", "sessions", started.Format("2006/01/02"))
 	rollout := filepath.Join(dir, "rollout-"+started.Format("2006-01-02T15-04-05")+"-"+thread+".jsonl")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -225,11 +228,15 @@ func TestActivityFindsCodexRollout(t *testing.T) {
 		`{"timestamp":"`+ts+`","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hello codex"}]}}`,
 		`{"timestamp":"`+ts+`","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":10,"reasoning_output_tokens":0,"total_tokens":110},"last_token_usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":10,"reasoning_output_tokens":0,"total_tokens":110}}}}`,
 	)
-	act, err := h.c.Activity(bg, "s_codex", api.ActivityQuery{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !act.Available || len(act.Items) != 1 || act.Items[0].Text != "hello codex" || act.Usage == nil || act.Usage.Model != "gpt-6-sol" {
+	// The search above found nothing (as the usage refresh may have): a
+	// person opening the feed searches again within findRetryLook.
+	var act api.Activity
+	waitFor(t, "the rollout", func() bool {
+		var err error
+		act, err = h.c.Activity(bg, "s_codex", api.ActivityQuery{})
+		return err == nil && act.Available
+	})
+	if len(act.Items) != 1 || act.Items[0].Text != "hello codex" || act.Usage == nil || act.Usage.Model != "gpt-6-sol" {
 		t.Fatalf("activity = %+v", act)
 	}
 	waitFor(t, "caps.activity after discovery", func() bool {

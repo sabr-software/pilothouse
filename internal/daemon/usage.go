@@ -99,7 +99,7 @@ func (d *Daemon) refreshUsage(ctx context.Context, backfill bool) {
 			continue
 		}
 		hadPath := s.TranscriptPath != "" || st.foundPath(s.ID) != ""
-		src, _, ok := st.source(s, now)
+		src, _, ok := st.source(s, now, findRetry)
 		if !ok {
 			continue
 		}

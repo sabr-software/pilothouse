@@ -28,8 +28,11 @@ const (
 	// caps.activity, which runs inside every session save.
 	readableTTL   = time.Minute
 	unreadableTTL = 2 * time.Second
-	// findRetry is how often a transcript nobody named is searched for.
-	findRetry = 30 * time.Second
+	// findRetry is how often a transcript nobody named is searched for;
+	// findRetryLook when a person opens the feed (Codex writes its rollout
+	// a moment after the session starts).
+	findRetry     = 30 * time.Second
+	findRetryLook = time.Second
 	// maxLooked bounds the "last looked at" times kept.
 	maxLooked = 10_000
 	// replyMatchSlack: a prompt is a Pilothouse reply when its text equals
@@ -133,7 +136,7 @@ func (d *Daemon) Activity(ctx context.Context, sessionID string, q api.ActivityQ
 		}
 		return out, nil
 	}
-	src, note, ok := st.source(s, now)
+	src, note, ok := st.source(s, now, findRetryLook)
 	if !ok {
 		out.Note = note
 		return out, nil
@@ -166,8 +169,9 @@ func (d *Daemon) Activity(ctx context.Context, sessionID string, q api.ActivityQ
 	return out, nil
 }
 
-// source says where a session's transcript is, or why there is none.
-func (st *activityState) source(s api.Session, now time.Time) (transcript.Source, string, bool) {
+// source says where a session's transcript is, or why there is none,
+// searching again for one nobody named after retry.
+func (st *activityState) source(s api.Session, now time.Time, retry time.Duration) (transcript.Source, string, bool) {
 	switch s.Agent {
 	case api.AgentClaude, api.AgentCodex, api.AgentGrok:
 	default:
@@ -175,7 +179,7 @@ func (st *activityState) source(s api.Session, now time.Time) (transcript.Source
 	}
 	path := s.TranscriptPath
 	if path == "" {
-		path = st.find(s, now)
+		path = st.find(s, now, retry)
 	}
 	if path == "" {
 		return transcript.Source{}, "No transcript yet: the agent hasn't written one.", false
@@ -185,15 +189,15 @@ func (st *activityState) source(s api.Session, now time.Time) (transcript.Source
 
 // find searches for the transcript of a session whose hooks didn't say
 // where it is (Codex sends transcript_path null until the rollout file
-// exists), at most every findRetry.
-func (st *activityState) find(s api.Session, now time.Time) string {
+// exists), at most every retry.
+func (st *activityState) find(s api.Session, now time.Time, retry time.Duration) string {
 	if s.AgentSessionID == "" {
 		return ""
 	}
 	st.mu.Lock()
 	f, ok := st.found[s.ID]
 	st.mu.Unlock()
-	if ok && (f.path != "" || now.Sub(f.at) < findRetry) {
+	if ok && (f.path != "" || now.Sub(f.at) < retry) {
 		return f.path
 	}
 	var path string
