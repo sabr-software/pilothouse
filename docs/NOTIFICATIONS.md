@@ -32,6 +32,13 @@ notify:
   desktop_browser: Safari
 ```
 
+If that browser already has a Pilothouse tab, a click switches to it and shows
+the page there instead of opening another. macOS asks once whether
+terminal-notifier may control the browser. This works in Safari and in
+Chromium browsers (Chrome, Edge, Brave, Vivaldi, Opera). Firefox can't be
+scripted, so a click there opens a new tab, as it does anywhere if you refuse
+the prompt or don't answer it within 30 seconds.
+
 `pilothouse setup` offers all of them; `pilothouse notify test` sends a test
 to each, and `pilothouse doctor` checks them.
 

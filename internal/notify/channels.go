@@ -37,6 +37,8 @@ type Desktop struct {
 	Run      func(ctx context.Context, name string, args ...string) error
 	// Base is the web app's URL for click-through links ("" or nil: none).
 	Base func() string
+	// Local is its address on this computer: a tab there is reused too.
+	Local func() string
 	// Browser names the app that opens the links (notify.desktop_browser);
 	// else AutoBrowser gives the bundle id of the browser Pilothouse is
 	// used in on this computer; else the default browser opens them. So a
@@ -46,8 +48,13 @@ type Desktop struct {
 }
 
 // Opener is the app a click opens its link in: App by name, else Bundle by
-// bundle id, else the default browser.
-type Opener struct{ App, Bundle string }
+// bundle id, else the default browser. In a browser AppleScript can reach,
+// a tab already at one of Origins (the link's first) shows the page instead
+// of a new one.
+type Opener struct {
+	App, Bundle string
+	Origins     []string
+}
 
 // NewDesktop returns a Desktop for this OS.
 func NewDesktop() *Desktop {
@@ -105,9 +112,9 @@ func TerminalNotifierArgs(title, body, group, link string, o Opener) []string {
 	switch {
 	case link == "":
 	case o.App != "":
-		args = append(args, "-execute", tnValue(openCmd("-a", o.App, link)))
+		args = append(args, "-execute", tnValue(tabCmd(link, o)+openCmd("-a", o.App, link)))
 	case o.Bundle != "":
-		args = append(args, "-execute", tnValue(openCmd("-b", o.Bundle, link)))
+		args = append(args, "-execute", tnValue(tabCmd(link, o)+openCmd("-b", o.Bundle, link)))
 	default:
 		args = append(args, "-open", tnValue(link))
 	}
@@ -119,6 +126,89 @@ func TerminalNotifierArgs(title, body, group, link string, o Opener) []string {
 // app isn't installed. Every word from outside is single-quoted.
 func openCmd(flag, app, link string) string {
 	return "/usr/bin/open " + flag + " " + shQuote(app) + " " + shQuote(link) + " || /usr/bin/open " + shQuote(link)
+}
+
+// tabBrowsers are the browsers whose tabs AppleScript can reach (Firefox's
+// can't be); pick is the line that brings tab t, number i, of window w
+// forward.
+var tabBrowsers = []struct{ id, app, pick string }{
+	{"com.apple.Safari", "Safari", "set current tab of w to t"},
+	{"com.google.Chrome", "Google Chrome", chromiumPick},
+	{"com.microsoft.edgemac", "Microsoft Edge", chromiumPick},
+	{"com.brave.Browser", "Brave Browser", chromiumPick},
+	{"com.vivaldi.Vivaldi", "Vivaldi", chromiumPick},
+	{"com.operasoftware.Opera", "Opera", chromiumPick},
+}
+
+const chromiumPick = "set active tab index of w to i"
+
+// tabWait bounds the search in seconds: macOS asks once whether
+// terminal-notifier may control the browser, and an unanswered prompt must
+// not leave a click doing nothing. It is long enough to read the prompt.
+const tabWait = 30
+
+// tabProgram finds a tab at one of the origins in argv (after the page's
+// path), shows the page there and brings it forward; it fails if there is
+// none. Its two blanks are filled from tabBrowsers: nothing from outside is
+// ever parsed as AppleScript.
+var tabProgram = []string{
+	"on run argv",
+	"set thePath to item 1 of argv",
+	"set origins to rest of argv",
+	`tell application id "%s"`,
+	"repeat with w in windows",
+	"set i to 0",
+	"repeat with t in tabs of w",
+	"set i to i + 1",
+	`set u to ""`,
+	"try",
+	"set u to URL of t as text",
+	"end try",
+	"repeat with o in origins",
+	"set origin to o as text",
+	`if u starts with origin & "/" then`,
+	"if u is not origin & thePath then set URL of t to origin & thePath",
+	"%s",
+	"set index of w to 1",
+	"activate",
+	"return",
+	"end if",
+	"end repeat",
+	"end repeat",
+	"end repeat",
+	"end tell",
+	`error "no Pilothouse tab"`,
+	"end run",
+}
+
+// tabCmd is the shell that tries the tab first and leaves what follows it
+// to run only if that fails, or "" for a browser AppleScript can't reach.
+func tabCmd(link string, o Opener) string {
+	if len(o.Origins) == 0 {
+		return ""
+	}
+	for _, b := range tabBrowsers {
+		if b.id != o.Bundle && b.app != o.App {
+			continue
+		}
+		var c strings.Builder
+		c.WriteString("/usr/bin/osascript")
+		for _, l := range tabProgram {
+			switch {
+			case strings.HasPrefix(l, "tell "):
+				l = fmt.Sprintf(l, b.id)
+			case l == "%s":
+				l = b.pick
+			}
+			c.WriteString(" -e " + shQuote(l))
+		}
+		c.WriteString(" -- " + shQuote(strings.TrimPrefix(link, o.Origins[0])))
+		for _, origin := range o.Origins {
+			c.WriteString(" " + shQuote(origin))
+		}
+		return c.String() + " >/dev/null 2>&1 & p=$!; (sleep " + strconv.Itoa(tabWait) + "; kill $p) >/dev/null 2>&1 & k=$!; wait $p; r=$?; kill $k 2>/dev/null; [ $r -eq 0 ] || "
+	}
+	return ""
 }
 
 // Withdraw takes a closed request's banner off the screen and out of
@@ -184,14 +274,20 @@ func (d *Desktop) Send(ctx context.Context, n core.Notification) error {
 	if d.GOOS == "darwin" && d.LookPath != nil {
 		if p, err := d.LookPath("terminal-notifier"); err == nil {
 			link := ""
+			o := Opener{App: d.Browser}
 			if d.Base != nil {
 				if b := d.Base(); b != "" {
 					link = Link(b, n)
+					o.Origins = []string{b}
+					if d.Local != nil {
+						if l := d.Local(); l != "" && l != b {
+							o.Origins = append(o.Origins, l)
+						}
+					}
 				}
 			}
 			// terminal-notifier 3 exits non-zero until macOS lets it
 			// notify: osascript still shows this one.
-			o := Opener{App: d.Browser}
 			if o.App == "" && d.AutoBrowser != nil {
 				o.Bundle = d.AutoBrowser()
 			}

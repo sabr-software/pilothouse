@@ -196,6 +196,9 @@ func (s *Server) PublicURL() string {
 	return s.pubURL
 }
 
+// LocalURL is the web app's address on this computer.
+func (s *Server) LocalURL() string { return s.localURL() }
+
 func (s *Server) localURL() string {
 	addr := s.d.Config.Web.Addr
 	if addr == "" {
