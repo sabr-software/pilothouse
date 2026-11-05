@@ -14,6 +14,13 @@ request is held and sent to every remote channel you set up:
 | Slack / Discord | `notify.webhooks` in `config.yaml` | no | yes |
 | Desktop | on by default (`notify.desktop`) | no | — |
 
+On macOS a desktop notification opens the request or session in the web app
+when you click it, if `terminal-notifier` is installed (`brew install
+terminal-notifier`; the Homebrew formula brings it). Without it Pilothouse
+falls back to `osascript`, which macOS credits to Script Editor, so a click
+only opens Script Editor. terminal-notifier 3 needs permission once: allow
+it in System Settings → Notifications.
+
 `pilothouse setup` offers all of them; `pilothouse notify test` sends a test
 to each, and `pilothouse doctor` checks them.
 

@@ -25,13 +25,18 @@ import (
 
 // ---- Desktop ----
 
-// Desktop shows a local notification: osascript on macOS, notify-send on
-// Linux. Text is passed as process arguments, never spliced into a script
-// or shell, so a hostile command string can't inject anything.
+// Desktop shows a local notification: on macOS terminal-notifier when it
+// is installed, so a click opens the request or session in the web app,
+// else osascript (macOS credits that to Script Editor: a click only opens
+// Script Editor); notify-send on Linux. Text is passed as process
+// arguments, never spliced into a script or shell, so a hostile command
+// string can't inject anything.
 type Desktop struct {
 	GOOS     string
 	LookPath func(string) (string, error)
 	Run      func(ctx context.Context, name string, args ...string) error
+	// Base is the web app's URL for click-through links ("" or nil: none).
+	Base func() string
 }
 
 // NewDesktop returns a Desktop for this OS.
@@ -82,7 +87,73 @@ func DesktopCommand(goos, title, body string, lookPath func(string) (string, err
 	return "", nil
 }
 
+// TerminalNotifierArgs returns terminal-notifier arguments that show
+// title/body and open link ("": nothing) on a click. group names the
+// notification: a newer one in the same group replaces it.
+func TerminalNotifierArgs(title, body, group, link string) []string {
+	args := []string{"-title", tnValue(clean(title, 120)), "-message", tnValue(clean(body, 300)), "-group", tnValue(group)}
+	if link != "" {
+		args = append(args, "-open", tnValue(link))
+	}
+	return args
+}
+
+// tnValue quotes s for terminal-notifier, which reads options through
+// NSUserDefaults: a bare value is parsed as a property list, so "(a, b)"
+// becomes an array, a leading "-" loses the value and quotes vanish. A
+// quoted plist string comes through exactly; terminal-notifier then strips
+// one leading backslash (its own escape), so that one is doubled.
+func tnValue(s string) string {
+	if strings.HasPrefix(s, `\`) {
+		s = `\` + s
+	}
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
+}
+
+// desktopGroup is the notification's terminal-notifier group: one per
+// request, else per session, so a session's newer news replaces its older.
+func desktopGroup(n core.Notification) string {
+	switch {
+	case n.Request != nil && n.Request.ID != "":
+		return "pilothouse-" + n.Request.ID
+	case n.Session != nil && n.Session.ID != "":
+		return "pilothouse-" + n.Session.ID
+	}
+	return "pilothouse-" + string(n.Kind)
+}
+
+// Link is the web app page for n under base: the request, else the
+// session, else the inbox; the sender's deep link (a task: /t/<id>) wins.
+func Link(base string, n core.Notification) string {
+	link := base + "/"
+	switch {
+	case n.Request != nil:
+		link = base + "/r/" + url.PathEscape(n.Request.ID)
+	case n.Session != nil:
+		link = base + "/s/" + url.PathEscape(n.Session.ID)
+	}
+	if len(n.URL) > 1 && n.URL[0] == '/' && n.URL[1] != '/' {
+		link = base + n.URL
+	}
+	return link
+}
+
 func (d *Desktop) Send(ctx context.Context, n core.Notification) error {
+	if d.GOOS == "darwin" && d.LookPath != nil {
+		if p, err := d.LookPath("terminal-notifier"); err == nil {
+			link := ""
+			if d.Base != nil {
+				if b := d.Base(); b != "" {
+					link = Link(b, n)
+				}
+			}
+			// terminal-notifier 3 exits non-zero until macOS lets it
+			// notify: osascript still shows this one.
+			if d.Run(ctx, p, TerminalNotifierArgs(n.Title, n.Body, desktopGroup(n), link)...) == nil {
+				return nil
+			}
+		}
+	}
 	name, args := DesktopCommand(d.GOOS, n.Title, n.Body, d.LookPath)
 	if name == "" {
 		return nil // no desktop notifier here: not an error
@@ -180,16 +251,7 @@ func (c *Ntfy) Request(ctx context.Context, n core.Notification) (*http.Request,
 	var actions []string
 	if c.Pusher != nil {
 		if pub := c.Pusher.PublicURL(); pub != "" {
-			link := pub + "/"
-			switch {
-			case n.Request != nil:
-				link = pub + "/r/" + url.PathEscape(n.Request.ID)
-			case n.Session != nil:
-				link = pub + "/s/" + url.PathEscape(n.Session.ID)
-			}
-			if len(n.URL) > 1 && n.URL[0] == '/' && n.URL[1] != '/' { // the sender's deep link (a task: /t/<id>)
-				link = pub + n.URL
-			}
+			link := Link(pub, n)
 			h.Set("Click", link)
 			// One-tap Allow/Deny only for permissions: a question needs an
 			// answer and a plan should be read, so those open the app.

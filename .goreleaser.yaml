@@ -45,6 +45,11 @@ brews:
     homepage: https://pilothouse.dev
     description: One inbox for every coding agent — rules before every tool call, approvals from your phone
     license: Apache-2.0
+    # So a click on a desktop notification opens the request or session;
+    # a click on osascript's only opens Script Editor.
+    dependencies:
+      - name: terminal-notifier
+        os: mac
     install: |
       bin.install "pilothouse"
     test: |

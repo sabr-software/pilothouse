@@ -214,7 +214,11 @@ func Channels(cfg *config.Config, p Pusher, log *slog.Logger) []Channel {
 	hc := &http.Client{Timeout: defaultTimeout}
 	var chans []Channel
 	if cfg.Notify.Desktop {
-		chans = append(chans, NewDesktop())
+		d := NewDesktop()
+		if p != nil {
+			d.Base = p.BaseURL
+		}
+		chans = append(chans, d)
 	}
 	if p != nil {
 		chans = append(chans, pushChannel{p: p})

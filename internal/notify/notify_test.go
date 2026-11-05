@@ -217,6 +217,104 @@ func TestDesktopCommandEscaping(t *testing.T) {
 	}
 }
 
+// TestDesktopClickOpensPage: with terminal-notifier installed, a click
+// opens the request, session or task in the web app, and one that can't
+// notify (terminal-notifier 3 before macOS allows it) falls back to
+// osascript.
+func TestDesktopClickOpensPage(t *testing.T) {
+	var ran [][]string
+	fail := false
+	d := &Desktop{GOOS: "darwin",
+		LookPath: func(name string) (string, error) { return "/opt/homebrew/bin/" + name, nil },
+		Base:     func() string { return "https://mac.example.ts.net" },
+		Run: func(_ context.Context, n string, a ...string) error {
+			ran = append(ran, append([]string{n}, a...))
+			if fail && strings.HasSuffix(n, "terminal-notifier") {
+				return errors.New("exit status 3")
+			}
+			return nil
+		}}
+	opt := func(args []string, name string) string {
+		for i := 1; i+1 < len(args); i++ {
+			if args[i] == name {
+				return args[i+1]
+			}
+		}
+		return ""
+	}
+	for _, c := range []struct {
+		n           core.Notification
+		open, group string
+	}{
+		{core.Notification{Kind: core.NotifyRequest, Title: "t", Body: "b", Request: sampleRequest(), Session: sampleSession()}, "/r/r_abc", "pilothouse-r_abc"},
+		{core.Notification{Kind: core.NotifyWaiting, Title: "t", Body: "b", Session: sampleSession()}, "/s/s_abc", "pilothouse-s_abc"},
+		{core.Notification{Kind: core.NotifyWaiting, Title: "t", Body: "b", Session: sampleSession(), URL: "/t/t_1"}, "/t/t_1", "pilothouse-s_abc"},
+		{core.Notification{Kind: core.NotifyTest, Title: "t", Body: "b"}, "/", "pilothouse-test"},
+	} {
+		ran = nil
+		if err := d.Send(context.Background(), c.n); err != nil || len(ran) != 1 || ran[0][0] != "/opt/homebrew/bin/terminal-notifier" {
+			t.Fatalf("send: %v %q", err, ran)
+		}
+		if got := opt(ran[0], "-open"); got != `"https://mac.example.ts.net`+c.open+`"` {
+			t.Fatalf("-open = %s, want %s", got, c.open)
+		}
+		if got := opt(ran[0], "-group"); got != `"`+c.group+`"` {
+			t.Fatalf("-group = %s, want %s", got, c.group)
+		}
+	}
+
+	d.Base = func() string { return "" } // no web app: no link
+	ran = nil
+	if err := d.Send(context.Background(), core.Notification{Title: "t", Body: "b"}); err != nil || opt(ran[0], "-open") != "" {
+		t.Fatalf("no base: %v %q", err, ran)
+	}
+
+	fail = true
+	ran = nil
+	if err := d.Send(context.Background(), core.Notification{Title: "t", Body: "b"}); err != nil || len(ran) != 2 || ran[1][0] != "osascript" {
+		t.Fatalf("fallback: %v %q", err, ran)
+	}
+}
+
+// terminal-notifier reads options through NSUserDefaults, which parses a
+// bare value as a property list: every value goes as a quoted plist
+// string, and a leading backslash (terminal-notifier's own escape) is
+// doubled.
+func TestTerminalNotifierArgsQuote(t *testing.T) {
+	for in, want := range map[string]string{
+		"Claude Code · ERP · claude (master)": `"Claude Code · ERP · claude (master)"`,
+		"(a, b)":                              `"(a, b)"`,
+		"{a=b;}":                              `"{a=b;}"`,
+		"- [x] done":                          `"- [x] done"`,
+		`said "hi" \ ok`:                      `"said \"hi\" \\ ok"`,
+		`\[ZOMG]`:                             `"\\\\[ZOMG]"`,
+		"line\nbreak\tand tab":                `"line break and tab"`,
+	} {
+		if got := TerminalNotifierArgs(in, in, "g", "")[1]; got != want {
+			t.Errorf("%q → %s, want %s", in, got, want)
+		}
+	}
+	args := TerminalNotifierArgs("t", "b", "pilothouse-s_1", "http://127.0.0.1:7517/s/s_1")
+	if strings.Join(args, " ") != `-title "t" -message "b" -group "pilothouse-s_1" -open "http://127.0.0.1:7517/s/s_1"` {
+		t.Fatalf("args = %q", args)
+	}
+}
+
+// Channels gives the desktop channel the web app's URL for its links.
+func TestChannelsDesktopBase(t *testing.T) {
+	cfg := config.Default()
+	cfg.Notify.Desktop = true
+	for _, ch := range Channels(cfg, &fakePusher{public: "https://mac.example.ts.net"}, nil) {
+		if d, ok := ch.(*Desktop); ok {
+			if d.Base == nil || d.Base() != "https://mac.example.ts.net" {
+				t.Fatal("desktop has no web app URL")
+			}
+			return
+		}
+	}
+	t.Fatal("no desktop channel")
+}
+
 type fakePusher struct {
 	public string
 	pushed []core.Notification
