@@ -103,6 +103,13 @@ CREATE TABLE IF NOT EXISTS web_link_devices (
 	updated_at  INTEGER NOT NULL
 );
 `,
+	4: `
+-- Small values the web server keeps across restarts (browser.go).
+CREATE TABLE IF NOT EXISTS web_settings (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
+`,
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

@@ -37,10 +37,17 @@ type Desktop struct {
 	Run      func(ctx context.Context, name string, args ...string) error
 	// Base is the web app's URL for click-through links ("" or nil: none).
 	Base func() string
-	// Browser opens the links ("": the default browser), so a click lands
-	// in the browser that is paired.
-	Browser string
+	// Browser names the app that opens the links (notify.desktop_browser);
+	// else AutoBrowser gives the bundle id of the browser Pilothouse is
+	// used in on this computer; else the default browser opens them. So a
+	// click lands in the browser that is paired.
+	Browser     string
+	AutoBrowser func() string
 }
+
+// Opener is the app a click opens its link in: App by name, else Bundle by
+// bundle id, else the default browser.
+type Opener struct{ App, Bundle string }
 
 // NewDesktop returns a Desktop for this OS.
 func NewDesktop() *Desktop {
@@ -91,21 +98,27 @@ func DesktopCommand(goos, title, body string, lookPath func(string) (string, err
 }
 
 // TerminalNotifierArgs returns terminal-notifier arguments that show
-// title/body and open link ("": nothing) on a click, in browser ("": the
-// default browser). group names the notification: a newer one in the same
-// group replaces it.
-func TerminalNotifierArgs(title, body, group, link, browser string) []string {
+// title/body and open link ("": nothing) on a click, with o. group names
+// the notification: a newer one in the same group replaces it.
+func TerminalNotifierArgs(title, body, group, link string, o Opener) []string {
 	args := []string{"-title", tnValue(clean(title, 120)), "-message", tnValue(clean(body, 300)), "-group", tnValue(group)}
 	switch {
 	case link == "":
-	case browser != "":
-		// terminal-notifier runs -execute with /bin/sh: both words are
-		// single-quoted.
-		args = append(args, "-execute", tnValue("/usr/bin/open -a "+shQuote(browser)+" "+shQuote(link)))
+	case o.App != "":
+		args = append(args, "-execute", tnValue(openCmd("-a", o.App, link)))
+	case o.Bundle != "":
+		args = append(args, "-execute", tnValue(openCmd("-b", o.Bundle, link)))
 	default:
 		args = append(args, "-open", tnValue(link))
 	}
 	return args
+}
+
+// openCmd is the shell command (terminal-notifier runs -execute with
+// /bin/sh) that opens link in app, or in the default browser when that
+// app isn't installed. Every word from outside is single-quoted.
+func openCmd(flag, app, link string) string {
+	return "/usr/bin/open " + flag + " " + shQuote(app) + " " + shQuote(link) + " || /usr/bin/open " + shQuote(link)
 }
 
 // shQuote quotes s as one sh word.
@@ -164,7 +177,11 @@ func (d *Desktop) Send(ctx context.Context, n core.Notification) error {
 			}
 			// terminal-notifier 3 exits non-zero until macOS lets it
 			// notify: osascript still shows this one.
-			if d.Run(ctx, p, TerminalNotifierArgs(n.Title, n.Body, desktopGroup(n), link, d.Browser)...) == nil {
+			o := Opener{App: d.Browser}
+			if o.App == "" && d.AutoBrowser != nil {
+				o.Bundle = d.AutoBrowser()
+			}
+			if d.Run(ctx, p, TerminalNotifierArgs(n.Title, n.Body, desktopGroup(n), link, o)...) == nil {
 				return nil
 			}
 		}

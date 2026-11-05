@@ -96,6 +96,8 @@ type Server struct {
 	pushMu sync.Mutex
 	pushed map[string]pushedRequest // request id → devices its push reached (push.go)
 
+	desk deskBrowser // the browser used on this computer (browser.go)
+
 	links  *linkHub       // machines linked to this one (link.go)
 	linked *http.ServeMux // routes a hub may call (linked.go)
 

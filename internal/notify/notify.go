@@ -218,6 +218,9 @@ func Channels(cfg *config.Config, p Pusher, log *slog.Logger) []Channel {
 		d.Browser = cfg.Notify.DesktopBrowser
 		if p != nil {
 			d.Base = p.BaseURL
+			if b, ok := p.(interface{ DesktopBrowser() string }); ok {
+				d.AutoBrowser = b.DesktopBrowser
+			}
 		}
 		chans = append(chans, d)
 	}

@@ -46,8 +46,9 @@ type Config struct {
 	Notify struct {
 		Desktop bool `yaml:"desktop"` // default true
 		// DesktopBrowser is the app a click on a desktop notification opens
-		// its page in (macOS), such as "Google Chrome": the browser you
-		// paired. Empty: the default browser.
+		// its page in (macOS), such as "Safari" or "Microsoft Edge". Empty:
+		// the browser Pilothouse was last used in on this computer, else
+		// the default browser.
 		DesktopBrowser string `yaml:"desktop_browser"`
 		Ntfy           struct {
 			Server string `yaml:"server"` // default https://ntfy.sh

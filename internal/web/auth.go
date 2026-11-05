@@ -41,6 +41,7 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		s.touch(r.Context(), d.ID)
+		s.noteBrowser(r)
 		next(w, r.WithContext(context.WithValue(r.Context(), ctxDevice, d)))
 	}
 }

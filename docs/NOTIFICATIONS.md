@@ -21,12 +21,15 @@ falls back to `osascript`, which macOS credits to Script Editor, so a click
 only opens Script Editor. terminal-notifier 3 needs permission once: allow
 it in System Settings → Notifications.
 
-The page opens in your default browser. If you paired a different one, name
-it so a click lands where you're signed in:
+The page opens in the browser you use Pilothouse in on this computer
+(Safari, Chrome, Edge, Firefox, Brave, Opera, …), learned from that
+browser's own requests. Until it has seen one, or for a Chromium browser
+that doesn't name itself (Arc, Vivaldi), the default browser opens it. To
+choose one yourself:
 
 ```yaml
 notify:
-  desktop_browser: Google Chrome
+  desktop_browser: Safari
 ```
 
 `pilothouse setup` offers all of them; `pilothouse notify test` sends a test
