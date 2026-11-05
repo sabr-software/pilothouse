@@ -35,6 +35,9 @@ func (d *Daemon) enrichRequest(req *api.Request, h *hookCall) {
 		})
 	}
 	req.Context = lastWords(h.ev.TranscriptPath)
+	if req.Checkpoint == api.CheckpointPermission {
+		req.GrantCovers = grantCovers(*req, firstNonEmpty(h.root, h.cwd))
+	}
 }
 
 const (

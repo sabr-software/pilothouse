@@ -134,7 +134,11 @@
 .dec-bar .answer-hint:empty { display: none; }
 .dec-links { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 4px; }
 .dec-links .link-btn { min-height: 44px; padding: 0 2px; font-size: 16px; font-weight: 600; }
-.dec-links .dec-session { color: var(--brand-text); }
+/* Allow for session: a real button with what it covers under it, on every decision card. */
+.dec-sess { display: grid; gap: 6px; margin-top: 10px; }
+.dec-sess .btn { width: 100%; min-height: 44px; font-size: var(--fs-base); font-weight: 650; color: var(--brand-text); }
+.dec-covers { margin: 0; font-size: var(--fs-xs); line-height: 1.4; color: var(--text-2); text-align: center; overflow-wrap: anywhere; }
+.req.denying .dec-sess, .req.resolved .dec-sess { display: none; }
 .dec-links .dec-rule { color: var(--text-2); }
 
 /* ---- denying, revising, answered ---- */

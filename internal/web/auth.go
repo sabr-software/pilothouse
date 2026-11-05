@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/sabr-software/pilothouse/internal/api"
 	"github.com/sabr-software/pilothouse/internal/config"
+	"github.com/sabr-software/pilothouse/internal/paths"
 	"github.com/sabr-software/pilothouse/internal/version"
 )
 
@@ -379,6 +381,9 @@ func (s *Server) guard(h http.Handler) http.Handler {
 }
 
 func (s *Server) handleLocalPair(w http.ResponseWriter, r *http.Request) {
+	if s.refuseWithoutWeb(w) {
+		return
+	}
 	code, exp, err := s.createCode(r.Context(), "pair", pairTTL)
 	if err != nil {
 		s.writeCoreErr(w, err)
@@ -392,9 +397,33 @@ func (s *Server) handleLocalPair(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// SetWebDown records that this daemon couldn't start its web app. A code
+// from it could never be redeemed: whatever answers on that port isn't this
+// daemon (another Pilothouse, usually), so it refuses to hand one out.
+func (s *Server) SetWebDown(addr string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.webDown = addr
+}
+
+func (s *Server) refuseWithoutWeb(w http.ResponseWriter) bool {
+	s.mu.Lock()
+	addr := s.webDown
+	s.mu.Unlock()
+	if addr == "" {
+		return false
+	}
+	writeErr(w, http.StatusServiceUnavailable, "web_down", fmt.Sprintf("this Pilothouse can't pair anything: its web app didn't start because %s is already in use, "+
+		"most likely by another Pilothouse. Its home is %s. Open a new terminal window and try there", addr, paths.Home()))
+	return true
+}
+
 // handleLocalLogin issues a login link for a browser on this machine, so
 // it always uses the loopback URL.
 func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
+	if s.refuseWithoutWeb(w) {
+		return
+	}
 	code, exp, err := s.createCode(r.Context(), "login", loginTTL)
 	if err != nil {
 		s.writeCoreErr(w, err)

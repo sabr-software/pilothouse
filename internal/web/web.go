@@ -101,6 +101,7 @@ type Server struct {
 	links  *linkHub       // machines linked to this one (link.go)
 	linked *http.ServeMux // routes a hub may call (linked.go)
 
+	webDown  string // web.addr this daemon couldn't listen on; guarded by mu
 	notifyMu sync.Mutex
 	notify   core.Notifier // delivers what linked machines forward
 }

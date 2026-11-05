@@ -51,7 +51,7 @@ await run(async () => {
   const usagePanel = await text(page, '.usage-panel');
   check('usage chip opens a breakdown (input, cache read, model)', usagePanel.includes('Input') && usagePanel.includes('Cache read') && usagePanel.includes('claude-sonnet-4-5'), usagePanel.replace(/\s+/g, ' '));
   check('caps.watch → Open terminal', !!(await page.$('a[href="/s/s_web01/terminal"]')));
-  check('caps.interrupt → Interrupt', !!(await page.$('#interrupt-btn')));
+  check('caps.interrupt: no Interrupt beside an open request (Deny stops it)', !(await page.$('#interrupt-btn')));
   check('caps.reply → reply box', !!(await page.$('#reply-text')));
   check('reply note says how it is delivered (terminal)', (await text(page, '#reply-note')).includes('terminal'));
   check('open request shown with the request card', (await text(page, '.sess')).includes('git push origin feat/session-page') && !!(await page.$('.sess article.req')));
@@ -138,7 +138,14 @@ await run(async () => {
   check('…without typing the r', (await page.$eval('#reply-text', (e) => e.value)) === '');
   await page.evaluate(() => document.activeElement.blur());
 
-  // ---- Interrupt (signed, two taps) ----
+  // ---- Interrupt (signed, two taps): while it works, with nothing waiting on you ----
+  await page.evaluate(async () => {
+    const { store, changed } = await import('/js/api.js');
+    for (const [id, r] of store.requests) if (r.session_id === 's_web01') store.requests.delete(id);
+    changed();
+  });
+  await page.waitForSelector('.rnow.live #interrupt-btn', { timeout: 5000 });
+  check('caps.interrupt → Interrupt under Right now', !!(await page.$('.rnow.live #interrupt-btn')));
   apiR.clear();
   await tap(page, '#interrupt-btn');
   check('interrupt asks for a second tap', (await text(page, '#interrupt-btn')).includes('Tap again'));

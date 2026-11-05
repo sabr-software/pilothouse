@@ -1347,3 +1347,16 @@ func TestPermissionsPolicyAllowsOnlyCamera(t *testing.T) {
 		t.Fatalf("Permissions-Policy = %q", pp)
 	}
 }
+
+// A daemon whose web app didn't start refuses to hand out codes: nothing
+// could redeem them, and the port may belong to another Pilothouse.
+func TestNoCodesWithoutWebApp(t *testing.T) {
+	e := newEnv(t)
+	e.srv.SetWebDown("127.0.0.1:7517")
+	for _, p := range []string{"/v1/pair", "/v1/login-link"} {
+		w := e.localDo("POST", p)
+		if w.Code != http.StatusServiceUnavailable || errCode(t, w) != "web_down" || !strings.Contains(w.Body.String(), "127.0.0.1:7517 is already in use") {
+			t.Errorf("%s: %d %s", p, w.Code, w.Body)
+		}
+	}
+}

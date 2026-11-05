@@ -599,3 +599,24 @@ func TestNtfyRetries(t *testing.T) {
 		t.Fatalf("403: err=%v attempts=%d", err, len(got()))
 	}
 }
+
+// A closed request's banner goes away: a click could only find it gone.
+func TestDesktopWithdrawRemovesTheBanner(t *testing.T) {
+	var got []string
+	d := &Desktop{GOOS: "darwin", LookPath: func(n string) (string, error) { return "/bin/" + n, nil },
+		Run: func(_ context.Context, name string, args ...string) error {
+			got = append([]string{name}, args...)
+			return nil
+		}}
+	if err := d.Withdraw(context.Background(), api.Request{ID: "r_1"}); err != nil {
+		t.Fatal(err)
+	}
+	if s := strings.Join(got, " "); s != `/bin/terminal-notifier -remove "pilothouse-r_1"` {
+		t.Fatalf("ran %s", s)
+	}
+	got = nil
+	lin := &Desktop{GOOS: "linux", LookPath: d.LookPath, Run: d.Run}
+	if err := lin.Withdraw(context.Background(), api.Request{ID: "r_1"}); err != nil || got != nil {
+		t.Fatalf("linux ran %v: %v", got, err)
+	}
+}

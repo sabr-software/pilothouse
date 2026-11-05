@@ -35,6 +35,10 @@ notify:
 `pilothouse setup` offers all of them; `pilothouse notify test` sends a test
 to each, and `pilothouse doctor` checks them.
 
+A request waits about six seconds before it notifies anyone, so prompts an
+agent settles by itself never reach you, and a banner on your Mac goes away
+when its request is answered.
+
 ## What a notification says
 
 Every channel words requests the same way: the agent and the repo (and

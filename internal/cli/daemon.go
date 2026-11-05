@@ -19,6 +19,7 @@ import (
 
 	"github.com/sabr-software/pilothouse/internal/api"
 	"github.com/sabr-software/pilothouse/internal/client"
+	"github.com/sabr-software/pilothouse/internal/config"
 	"github.com/sabr-software/pilothouse/internal/daemon"
 	"github.com/sabr-software/pilothouse/internal/paths"
 )
@@ -92,6 +93,8 @@ func newStartCmd() *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "pilothouse daemon started (pid %d)\n", h.PID)
 			if h.WebURL != "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "web app: %s\n", h.WebURL)
+			} else if cfg, err := config.Load(); err == nil && cfg.Web.Addr != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "! The web app didn't start, so no phone or browser can reach this daemon. Its port is probably in use by another Pilothouse: see %s\n", daemonLogPath())
 			}
 			return nil
 		},

@@ -47,8 +47,8 @@ and one of them force-pushes. Pilothouse fixes both:
   - **At your desk:** the agent's own prompt appears as usual, so nothing
     freezes.
   - **Away** (keyboard idle): the request is held and pushed to your paired
-    phone. Hold to allow, or Deny; Allow for session and Make it a rule
-    are one tap further. Claude Code also keeps its
+    phone. Hold to allow, Deny, or Allow for session (the card says what
+    it covers); Make it a rule is one tap further. Claude Code also keeps its
     own prompt open in the terminal; whichever you answer first wins, and the
     other one closes.
   - **When you come back:** any request still held is handed back to your

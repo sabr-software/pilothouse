@@ -81,6 +81,9 @@ type Options struct {
 	// PollInterval is the period of the presence, liveness and policy-reload
 	// loops. Zero means 2 s.
 	PollInterval time.Duration
+	// NotifyGrace is how long a held request stays quiet before anyone is
+	// notified (notifyHeld). Zero means 6 s; negative notifies at once.
+	NotifyGrace time.Duration
 	// HerdrNamesEvery is how often session names are read from herdr
 	// (syncHerdrNames). Zero means 10 s; negative turns it off.
 	HerdrNamesEvery time.Duration
@@ -383,6 +386,7 @@ func (d *Daemon) listenWeb() (*http.Server, net.Listener) {
 	ln, err := net.Listen("tcp", d.cfg.Web.Addr)
 	if err != nil {
 		d.log.Error("web app disabled: cannot listen", "addr", d.cfg.Web.Addr, "err", err)
+		d.web.SetWebDown(d.cfg.Web.Addr)
 		return nil, nil
 	}
 	d.webURL = "http://" + ln.Addr().String()

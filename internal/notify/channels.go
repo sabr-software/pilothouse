@@ -121,6 +121,20 @@ func openCmd(flag, app, link string) string {
 	return "/usr/bin/open " + flag + " " + shQuote(app) + " " + shQuote(link) + " || /usr/bin/open " + shQuote(link)
 }
 
+// Withdraw takes a closed request's banner off the screen and out of
+// Notification Center: a click on it could only lead to a request that is
+// already gone. Only terminal-notifier can; the group names the request.
+func (d *Desktop) Withdraw(ctx context.Context, r api.Request) error {
+	if d.GOOS != "darwin" || d.LookPath == nil {
+		return nil
+	}
+	p, err := d.LookPath("terminal-notifier")
+	if err != nil {
+		return nil
+	}
+	return d.Run(ctx, p, "-remove", tnValue("pilothouse-"+r.ID))
+}
+
 // shQuote quotes s as one sh word.
 func shQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"

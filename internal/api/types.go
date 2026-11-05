@@ -162,12 +162,15 @@ type Request struct {
 	Questions  []Question      `json:"questions,omitempty"`   // checkpoint question
 	Plan       *Plan           `json:"plan,omitempty"`        // checkpoint plan
 	Risk       []RiskLabel     `json:"risk,omitempty"`        // most severe first
-	Preview    *Preview        `json:"preview,omitempty"`     // file changes the tool call would make
-	Context    string          `json:"context,omitempty"`     // the agent's last words before asking, trimmed
-	Decision   *Decision       `json:"decision,omitempty"`
-	CreatedAt  time.Time       `json:"created_at"`
-	ExpiresAt  time.Time       `json:"expires_at"`
-	ClosedAt   *time.Time      `json:"closed_at,omitempty"`
+	// GrantCovers says what "allow for this session" would cover, in a few
+	// words each: "git status", "reading files in this folder", "every Edit call".
+	GrantCovers []string   `json:"grant_covers,omitempty"`
+	Preview     *Preview   `json:"preview,omitempty"` // file changes the tool call would make
+	Context     string     `json:"context,omitempty"` // the agent's last words before asking, trimmed
+	Decision    *Decision  `json:"decision,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	ExpiresAt   time.Time  `json:"expires_at"`
+	ClosedAt    *time.Time `json:"closed_at,omitempty"`
 }
 
 // Behavior is the outcome of a decision.

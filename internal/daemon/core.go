@@ -156,11 +156,23 @@ func (d *Daemon) Decide(ctx context.Context, dec api.Decision) (api.Request, err
 		if err != nil {
 			return err
 		}
+		// Answered: the agent carries on, and nothing waits on the person,
+		// whatever the agent's own notification said a moment ago.
+		if err := tx.AddEvidence(ctx, req.SessionID, api.StateEvidence{At: tx.Now(), Layer: api.LayerHook,
+			State: api.StateWorking, Detail: "Carrying on after your answer"}); err != nil {
+			return err
+		}
 		if dec.Behavior == api.BehaviorAllow && dec.Scope == api.ScopeSession {
-			g := api.Grant{ID: newID("g_"), SessionID: req.SessionID, Tool: req.Tool,
-				Prefix: grantPrefix(req), DecisionBy: dec.By, CreatedAt: tx.Now()}
-			if err := tx.InsertGrant(ctx, g); err != nil {
-				return err
+			var root string
+			if s, err := tx.Session(ctx, req.SessionID); err == nil {
+				root = firstNonEmpty(s.RepoRoot, s.Cwd)
+			}
+			for _, key := range grantKeys(req, root) {
+				g := api.Grant{ID: newID("g_"), SessionID: req.SessionID, Tool: req.Tool,
+					Prefix: key, DecisionBy: dec.By, CreatedAt: tx.Now()}
+				if err := tx.InsertGrant(ctx, g); err != nil {
+					return err
+				}
 			}
 		}
 		if _, err := tx.Emit(ctx, api.EventRequestClosed, req.SessionID, req.ID, req); err != nil {

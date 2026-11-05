@@ -334,7 +334,7 @@ export function sessionView(id) {
     const termBtn = caps.watch && live ? link(`/s/${s.id}/terminal`, { class: 'btn secondary' }, icon('terminal', 'sm'), 'Terminal') : null;
     const armedN = interruptArmed > Date.now();
     const intrBtn = caps.interrupt && live ? h('button', {
-      class: 'btn ' + (armedN ? 'danger armed' : 'ghost deny'), type: 'button', id: 'interrupt-btn', 'aria-live': 'polite', onclick: onInterrupt,
+      class: 'btn ' + (armedN ? 'danger armed' : 'secondary'), type: 'button', id: 'interrupt-btn', 'aria-live': 'polite', onclick: onInterrupt,
     }, icon('stop', 'sm'), armedN ? 'Tap again to stop' : 'Interrupt') : null;
     if (open.length) {
       fill(needsEl, h('section', { class: 'rnow need', 'aria-labelledby': 'now-h' },
@@ -342,7 +342,8 @@ export function sessionView(id) {
         open.map((r) => (r === perm
           ? h('div', { class: 'rdec' }, h('p', { class: 'rask' }, askTitle(r)), requestCard(r, { slot: 'session', variant: 'ledger', proof: proofEl, animate: false }))
           : link('/r/' + r.id, { class: 'rgo' }, h('span', null, askTitle(r)), icon('chev', 'sm')))),
-        termBtn || intrBtn ? h('div', { class: 'racts pad' }, termBtn, intrBtn) : null));
+        // No Interrupt here: the agent is waiting on this answer, and Deny stops it.
+        termBtn ? h('div', { class: 'racts pad' }, termBtn) : null));
       return;
     }
     if (s.state === 'blocked') {

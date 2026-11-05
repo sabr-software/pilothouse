@@ -281,7 +281,28 @@ matching rule is reported (`pilothouse policy test`, the `policy.decision`
 event), including ones that were ignored and why.
 
 Session grants ("allow for this session" answers) are applied by the daemon
-after deny and ask rules, so they can never override a deny or an ask.
+after deny and ask rules, so they can never override a deny or an ask. When
+a rule asks every time, the app says so instead of offering the button.
+
+A grant is judged part by part, so it survives the next chained line. For
+`cd web && git status | head; sed -n 1,80p src/a.ts`:
+
+- `cd` and `ls` inside the session's folder, commands that only print, and
+  read-only filters at the end of a pipe need no grant.
+- File readers (`cat`, `sed -n`, `grep`, `rg`, `find`, `head`, `tail`, `wc`
+  and similar) share one grant, "reading files in this folder". It covers
+  reads inside the session's repo only: not `~/.ssh`, not `../other`, not
+  `.env`. Options that write or run something (`sed -i`, `find -delete`,
+  `find -exec`, `sort -o`, `rg --pre`) aren't covered.
+- Anything else needs its command key (`git status`), or that exact part,
+  granted.
+
+These always reach a person, whatever was granted: `$(…)` and backticks,
+writes through a redirection (`>`, `>>`), `sudo`, `xargs`, `env` and
+`NAME=value` prefixes, a pipe into a shell or interpreter, and a chained
+line labelled destructive, force-push, deploy, secrets, network, sudo or
+outside the repo. The folder check reads the path as written and doesn't
+follow symlinks.
 
 Tools that ask the person something — Claude Code's `AskUserQuestion` and
 `ExitPlanMode`, Codex's `request_user_input` — are decided by **deny** rules

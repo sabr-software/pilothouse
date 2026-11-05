@@ -127,8 +127,14 @@ func (d *Daemon) routeHook(ctx context.Context, ad adapters.Adapter, env adapter
 		if _, err := tx.Emit(ctx, api.EventHook, s.ID, "", loggedEvent(ev)); err != nil {
 			return err
 		}
-		if err := addHookEvidence(ctx, tx, s.ID, ev); err != nil {
+		settled, err := permissionSettled(ctx, tx.Reader, s.ID, ev, tx.Now())
+		if err != nil {
 			return err
+		}
+		if !settled {
+			if err := addHookEvidence(ctx, tx, s.ID, ev); err != nil {
+				return err
+			}
 		}
 		if outcome, err = d.applyHookEffects(ctx, tx, s, h, pol, plan); err != nil {
 			return err
@@ -283,7 +289,7 @@ func (d *Daemon) decidePreTool(ctx context.Context, tx *store.Tx, s api.Session,
 		if err != nil {
 			return out, err
 		}
-		if g, ok := matchGrant(grants, ev.Tool, ev.ToolKind, ev.Command); ok {
+		if g, ok := matchGrantAt(grants, ev.Tool, ev.ToolKind, ev.Command, firstNonEmpty(ev.Cwd, s.Cwd), firstNonEmpty(s.RepoRoot, s.Cwd)); ok {
 			out = adapters.HookOutcome{Behavior: api.BehaviorAllow, Message: "Allowed for this session in Pilothouse."}
 			de.Grant = g.ID
 		} else if pol.Action == api.BehaviorAllow {
@@ -335,7 +341,11 @@ func (d *Daemon) grantPermission(ctx context.Context, tx *store.Tx, p *permissio
 	if err != nil {
 		return err
 	}
-	g, ok := matchGrant(grants, p.req.Tool, p.req.ToolKind, p.req.Command)
+	var root string
+	if s, err := tx.Session(ctx, p.req.SessionID); err == nil {
+		root = firstNonEmpty(s.RepoRoot, s.Cwd)
+	}
+	g, ok := matchGrantAt(grants, p.req.Tool, p.req.ToolKind, p.req.Command, p.req.Cwd, root)
 	if !ok {
 		return nil
 	}
@@ -381,6 +391,36 @@ func (d *Daemon) planPermission(h *hookCall, pol policy.Result) *permissionPlan 
 	return p
 }
 
+// notifyGrace is how long a held request stays quiet. An agent in an
+// automatic permission mode settles most prompts itself within moments, and
+// with several agents running that was a notification every second for
+// requests already gone.
+const notifyGrace = 6 * time.Second
+
+// notifyHeld tells a person about a held request once it has stayed open
+// through the grace period.
+func (d *Daemon) notifyHeld(req api.Request, sess api.Session) {
+	n := core.Notification{Kind: core.NotifyRequest, Request: &req, Session: &sess, Remote: true}
+	grace := d.opts.NotifyGrace
+	if grace == 0 {
+		grace = notifyGrace
+	}
+	if grace < 0 {
+		d.notify(n)
+		return
+	}
+	d.goBackground(func() {
+		select {
+		case <-d.ctx.Done():
+			return
+		case <-time.After(grace):
+		}
+		if cur, err := d.db.Request(d.ctx, req.ID); err == nil && cur.Status == api.RequestOpen {
+			d.notify(n)
+		}
+	})
+}
+
 // holdPermission waits for the outcome of a permission request routed to
 // devices; terminal-routed requests return no opinion at once so the
 // agent shows its own dialog.
@@ -391,7 +431,7 @@ func (d *Daemon) holdPermission(ctx context.Context, p *permissionPlan, sess api
 		return adapters.HookOutcome{}
 	}
 	defer d.waiters.remove(req.ID)
-	d.notify(core.Notification{Kind: core.NotifyRequest, Request: &req, Session: &sess, Remote: true})
+	d.notifyHeld(req, sess)
 
 	timer := time.NewTimer(p.hold)
 	defer timer.Stop()
@@ -574,6 +614,31 @@ func applyHook(s *api.Session, h *hookCall, now time.Time) {
 			s.ExitedAt = &t
 		}
 	}
+}
+
+// lateNotification is how long after a request closes the agent's "needs
+// your permission" notification is taken to be about that request: it can
+// arrive just after the answer.
+const lateNotification = 10 * time.Second
+
+// permissionSettled reports a "needs your permission" notification a request
+// already speaks for. An open request keeps the session blocked by itself;
+// recorded as evidence, the notification would leave the session blocked
+// after the answer, with nothing waiting, until the next hook (which, while
+// the allowed command runs, can be minutes away).
+func permissionSettled(ctx context.Context, r store.Reader, sessionID string, ev adapters.HookEvent, now time.Time) (bool, error) {
+	if ev.Kind != adapters.HookNotification || !strings.Contains(strings.ToLower(ev.NotificationType), "permission") {
+		return false, nil
+	}
+	open, err := r.Requests(ctx, store.RequestFilter{SessionID: sessionID, Statuses: store.PendingStatuses, Limit: 1})
+	if err != nil || len(open) > 0 {
+		return len(open) > 0, err
+	}
+	closed, err := r.Requests(ctx, store.RequestFilter{SessionID: sessionID, Closed: true, Limit: 1})
+	if err != nil || len(closed) == 0 || closed[0].ClosedAt == nil {
+		return false, err
+	}
+	return now.Sub(*closed[0].ClosedAt) < lateNotification, nil
 }
 
 // addHookEvidence records the state a hook is evidence of. Permission hooks

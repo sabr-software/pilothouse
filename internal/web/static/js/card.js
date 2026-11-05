@@ -424,6 +424,8 @@ function build(req, opts) {
   // ---- permission ----
   let allowBtn;
   let sessionBtn;
+  let sessionRow; // the button and, in words, what it covers
+  let sessionCovers;
   let denyBtn;
   let reason;
   let denyConfirm;
@@ -446,6 +448,8 @@ function build(req, opts) {
     ruleBtn.hidden = onOtherMachine(store.sessions.get(req.session_id));
     allowBtn.addEventListener('click', () => allowOnce());
     sessionBtn.addEventListener('click', () => allowSession());
+    sessionCovers = h('p', { class: 'dec-covers' });
+    sessionRow = h('div', { class: 'dec-sess' }, sessionCovers);
     denyBtn.addEventListener('click', () => openDeny());
     denyCancel.addEventListener('click', () => { card.classList.remove('denying'); denyBtn.focus(); });
     denyConfirm.addEventListener('click', () => {
@@ -463,6 +467,7 @@ function build(req, opts) {
       h('div', { class: 'row-btns' }, denyCancel, denyConfirm));
     return [
       h('div', { class: 'actions' + (opts.slot === 'main' || opts.slot === 'detail' ? ' wide-row' : '') }, denyBtn, sessionBtn, allowBtn),
+      sessionRow,
       h('div', { class: 'card-foot' }, ruleBtn, h('span', { class: 'spacer' }),
         opts.keep ? null : link('/r/' + req.id, { class: 'link-btn quiet-link' }, 'Details', h('span', { class: 'sr-only' }, ' of this request'), icon('chev', 'sm'))),
       denyForm,
@@ -652,9 +657,12 @@ function build(req, opts) {
     const hold = holdButton(() => allowOnce());
     controls.push(hold);
     allowBtn.hidden = true;
+    sessionBtn.className = 'btn outline dec-session';
+    sessionRow.prepend(sessionBtn);
     add(card, els.body, els.risks, opts.proof || null, denyForm,
       h('div', { class: 'acts3' }, denyBtn, hold,
         link('/r/' + req.id, { class: 'btn ghost sq', 'aria-label': 'Details and other options' }, icon('chev'))),
+      sessionRow,
       els.outcome);
   } else if (opts.variant === 'decision') {
     // The request page: the outcome (once closed) on top, then what it
@@ -670,10 +678,11 @@ function build(req, opts) {
       const hold = holdButton(() => allowOnce(), 'Hold to allow once');
       controls.push(hold);
       allowBtn.hidden = true;
-      sessionBtn.className = 'link-btn dec-session';
+      sessionBtn.className = 'btn outline dec-session';
+      sessionRow.prepend(sessionBtn);
       ruleBtn.className = 'link-btn quiet-link dec-rule';
       add(card, els.outcome, before, els.body, els.risks, after, denyForm,
-        bar(h('div', { class: 'actions dec-main' }, denyBtn, hold), h('div', { class: 'dec-links' }, sessionBtn, ruleBtn)));
+        bar(h('div', { class: 'actions dec-main' }, denyBtn, hold), sessionRow, h('div', { class: 'dec-links' }, ruleBtn)));
     } else if (kind === 'question') {
       const actions = tail[tail.length - 1];
       const hintEl = tail[tail.length - 2];
@@ -745,8 +754,17 @@ function build(req, opts) {
         fill(els.body, details(r, opts.variant === 'decision' ? 0 : opts.keep ? 24 : opts.variant === 'ledger' ? 6 : 10)); // lists show a short diff; the page all of it
         renderedBodyFor = sig;
       }
-      sessionBtn.title = `Also allow ${grantPrefix(r)} for the rest of this session`;
-      sessionBtn.setAttribute('aria-label', `Allow for session: also allow ${grantPrefix(r)} until this session ends`);
+      // A rule that asks outranks a grant, and some commands can't be
+      // granted: say so rather than offer a button that does nothing.
+      const covers = r.grant_covers || (r.tool_kind === 'shell' ? [grantPrefix(r)] : [`every ${r.tool} call`]);
+      const list = covers.slice(0, 4).join(', ') + (covers.length > 4 ? ` and ${covers.length - 4} more` : '');
+      const can = !r.policy_rule && covers.length > 0;
+      sessionBtn.hidden = !can;
+      sessionCovers.textContent = r.policy_rule ? `Your rule ${r.policy_rule} asks every time, so this can’t be allowed for the session.`
+        : can ? `Also allows ${list} until this session ends.`
+          : 'This command can’t be allowed for the session: it writes a file or runs something Pilothouse can’t check.';
+      sessionBtn.title = can ? `Also allow ${list} for the rest of this session` : '';
+      sessionBtn.setAttribute('aria-label', can ? `Allow for session: also allow ${list} until this session ends` : 'Allow for session');
       allowBtn.setAttribute('aria-label', `Allow once: ${verb.toLowerCase()} ${r.command || r.summary || r.tool}`);
     }
     fill(els.risks, kind !== 'permission' ? riskRow(r) : opts.variant === 'ledger' ? riskLine(r) : opts.variant === 'decision' ? riskTags(r) : riskRow(r));

@@ -334,7 +334,7 @@ func (n *Notifier) Withdraw(_ context.Context, r api.Request) error {
 	}
 	note := core.Notification{Kind: kindWithdraw, Request: &r, Remote: true}
 	for _, w := range n.workers {
-		if _, ok := w.ch.(Withdrawer); ok && w.ch.Remote() {
+		if _, ok := w.ch.(Withdrawer); ok {
 			n.enqueue(w, note)
 		}
 	}

@@ -210,6 +210,7 @@ func (h *harness) start(tb testing.TB) {
 		Log:                slog.New(slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		PollInterval:       20 * time.Millisecond,
 		HerdrNamesEvery:    -1, // never the person's own herdr; tests call syncHerdrNames
+		NotifyGrace:        -1,
 		DisableUpdateCheck: true,
 		keepAwake:          newFakeAwake().runner(), // never a real caffeinate in tests
 	}
