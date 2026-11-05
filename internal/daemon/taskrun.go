@@ -604,7 +604,7 @@ func (d *Daemon) taskSessionChanged(ctx context.Context, s api.Session, notifyRe
 	if want == api.TaskReview && notifyReview {
 		body := "The agent finished — review the result and changes"
 		if s.LastMessage != "" {
-			body = notify.Short(s.LastMessage, 160)
+			body = notify.Preview(s.LastMessage, 160)
 		}
 		d.notifyTask(t, &s, core.NotifyWaiting, "Ready for review", body, true)
 	}

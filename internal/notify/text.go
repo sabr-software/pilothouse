@@ -2,6 +2,7 @@ package notify
 
 import (
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
@@ -38,6 +39,17 @@ func Short(s string, n int) string {
 	}
 	r := []rune(s)
 	return strings.TrimSpace(string(r[:n-1])) + "…"
+}
+
+var (
+	mdBold = regexp.MustCompile(`(^|[^\w*])\*\*([^\s*](?:[^*\n]*[^\s*])?)\*\*`)
+	mdCode = regexp.MustCompile("`([^`\n]+)`")
+)
+
+// Preview is an agent's message as a notification shows it: Short, without
+// the bold and code marks, which a notification would print as they are.
+func Preview(s string, n int) string {
+	return Short(mdCode.ReplaceAllString(mdBold.ReplaceAllString(s, "$1$2"), "$1"), n)
 }
 
 // Action is what a request wants, without the agent:
@@ -197,7 +209,7 @@ func Render(n core.Notification) core.Notification {
 				n.Body += "\n" + strings.Join(d, "\n")
 			}
 		case n.Kind == core.NotifyWaiting && n.Session != nil && n.Session.LastMessage != "":
-			n.Body = "Finished: " + Short(n.Session.LastMessage, 160)
+			n.Body = "Finished: " + Preview(n.Session.LastMessage, 160)
 		case n.Kind == core.NotifyWaiting:
 			n.Body = "Finished its turn and is waiting for you"
 		case n.Kind == core.NotifyTest:

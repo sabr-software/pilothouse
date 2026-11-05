@@ -178,6 +178,25 @@ func TestText(t *testing.T) {
 	}
 }
 
+// A notification prints text as it is, so an agent's Markdown marks go.
+func TestPreview(t *testing.T) {
+	for in, want := range map[string]string{
+		"titled **\"Pilothouse test\"**. Click it":   `titled "Pilothouse test". Click it`,
+		"**Done.** Ran `go test` and **all** passed": "Done. Ran go test and all passed",
+		"2**3 and 4**5 stay":                         "2**3 and 4**5 stay",
+		"a ** b ** c":                                "a ** b ** c",
+		"one `tick stays":                            "one `tick stays",
+		"line one\n\n**line two**":                   "line one line two",
+	} {
+		if got := Preview(in, 160); got != want {
+			t.Errorf("%q → %q, want %q", in, got, want)
+		}
+	}
+	if got := Preview("**"+strings.Repeat("a", 200)+"**", 20); strings.Contains(got, "*") || !strings.HasSuffix(got, "…") {
+		t.Fatalf("cut after the marks go: %q", got)
+	}
+}
+
 func TestDesktopCommandEscaping(t *testing.T) {
 	hostile := `"; do shell script "rm -rf ~" --` + "\n" + `end run`
 	name, args := DesktopCommand("darwin", "Claude Code · repo", hostile, nil)
