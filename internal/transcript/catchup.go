@@ -24,10 +24,9 @@ const maxWaitingLines = 3
 func (f *feed) catchUp(since, now time.Time, extra CatchUpExtra) *api.CatchUp {
 	cu := &api.CatchUp{Since: since, Lines: []string{}}
 	type test struct {
-		name    string
-		at      time.Time
-		pending bool
-		failed  bool
+		name   string
+		at     time.Time
+		status string
 	}
 	var (
 		lastTest   *test
@@ -67,8 +66,10 @@ func (f *feed) catchUp(since, now time.Time, extra CatchUpExtra) *api.CatchUp {
 				errorCount++
 				lastError = it.Summary
 			}
-			if name := testRunner(it.command); name != "" {
-				lastTest = &test{name: name, at: it.At, pending: it.Pending, failed: it.IsError}
+			head := commandHead(it.command)
+			if name, end := runnerAt(testCommand, head); name != "" {
+				s := step{command: it.command, result: f.output(it), isError: it.IsError, pending: it.Pending}
+				lastTest = &test{name: name, at: it.At, status: s.checkStatus("tests", head, end)}
 			}
 			for _, e := range it.edits {
 				p := hookkit.RelPath(f.cwd, e.path)
@@ -118,11 +119,13 @@ func (f *feed) catchUp(since, now time.Time, extra CatchUpExtra) *api.CatchUp {
 		add("%d tool calls were denied", denied)
 	}
 	if lastTest != nil {
-		switch {
-		case lastTest.pending:
+		switch lastTest.status {
+		case checkRunning:
 			add("Tests: %s is running (started %s)", lastTest.name, ago(lastTest.at, now))
-		case lastTest.failed:
+		case checkFailed:
 			add("Tests: %s failed (last run %s)", lastTest.name, ago(lastTest.at, now))
+		case checkUnclear:
+			add("Tests: %s ran, but its output doesn't show the result (last run %s)", lastTest.name, ago(lastTest.at, now))
 		default:
 			add("Tests: %s passed (last run %s)", lastTest.name, ago(lastTest.at, now))
 		}

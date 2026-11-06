@@ -7,11 +7,12 @@
 // Also exports the small helpers the other 0.2 views share (signed
 // actions, number formatting, extra icons), so they need no new modules.
 
-import { h, icon, inkStamp, agentName, agentInitials, agentClass, repoName, stateLabel, agoLong, clock, relPath, fill, add, toMs } from '../dom.js';
+import { h, icon, agentName, agentInitials, agentClass, repoName, stateLabel, agoLong, clock, relPath, fill, add, toMs } from '../dom.js';
 import { store, api, onEvent, onOtherMachine } from '../api.js';
 import { requestCard } from '../card.js';
 import { renderMarkdown } from '../markdown.js';
 import { askTitle, plainStep, commandLabel, fillProof } from './today.js';
+import { verdict, checkState, checkTitle, CHECK_ICON } from '../proof.js';
 import { link, toast } from '../ui.js';
 import { avatar, section, sessionLine } from './rows.js';
 import { desktopButton } from '../desktop.js';
@@ -370,7 +371,7 @@ export function sessionView(id) {
     fill(needsEl);
   }
 
-  // ---- The report: what you asked, what it says, proof, changes ----
+  // ---- The report: what you asked, what it says, whether it checked, changes ----
   let reportKey = '';
   const openChecks = new Set();
   let saysOpen = false;
@@ -383,14 +384,16 @@ export function sessionView(id) {
     const t = turns[turns.length - 1];
     if (!t) { fill(catchEl); reportKey = ''; return; }
     // Rebuild only when what the report shows changes, not on every poll:
-    // re-filling replays the stamps and fade-ins (looks like flicker).
+    // re-filling replays the fade-ins (looks like flicker).
     const askedNow = t.prompts.length ? t.prompts[t.prompts.length - 1].text : '';
     const saidNow = ([...t.steps].reverse().find((it) => it.kind === 'text' && !it.sidechain && it.text) || {}).text || '';
-    // Only what the proof shows: check results, not counts that tick with every step.
+    // Only what the verdict shows: check results, not counts that tick with every step.
     const ck = (c) => c && [c.name, c.status, c.fresh, c.count, c.failed_before].join(':');
     const rcSig = receipt ? [ck(receipt.tests), ck(receipt.lint), ck(receipt.build), receipt.edits > 0,
-      receipt.edits ? '' : receipt.searches + '/' + receipt.reads].join('|') : '';
-    const sig = [t.key, askedNow, saidNow, rcSig, saysOpen, [...openChecks].join(',')].join('|');
+      receipt.edits ? receipt.files : receipt.searches + '/' + receipt.reads].join('|') : '';
+    const working = !!s && ACTIVE.has(s.state);
+    const canReply = !!s && !!(s.caps || {}).reply && s.state !== 'exited';
+    const sig = [t.key, askedNow, saidNow, rcSig, working, canReply, saysOpen, [...openChecks].join(',')].join('|');
     if (sig === reportKey) return;
     if (reportKey) catchEl.classList.add('settled'); // later rebuilds don't animate
     reportKey = sig;
@@ -420,38 +423,45 @@ export function sessionView(id) {
     }
     if (exch.length) parts.push(h('section', { class: 'exch', 'aria-label': 'Latest exchange' }, exch));
     const rc = receipt;
-    if (rc && (rc.tests || rc.lint || rc.build || rc.edits)) {
+    const v = rc ? verdict(rc, working) : null;
+    if (v) {
+      parts.push(h('h2', { class: 'lbl' }, 'Did it check its work?'), verdictBox(v, canReply));
       const checks = [['tests', 'Tests'], ['lint', 'Lint'], ['build', 'Build']].filter(([k]) => rc[k]);
-      parts.push(h('h2', { class: 'lbl' }, 'Proof'));
-      const stamps = checks.filter(([k]) => rc[k].status !== 'running').map(([k, name]) => stamp(k, name, rc[k]));
-      if (stamps.length) parts.push(h('div', { class: 'stamps' }, stamps, h('p', { class: 'stampnote' }, 'Checked by commands that ran in this turn, not by the agent’s word.')));
-      if (checks.length) parts.push(h('div', { class: 'checks' }, checks.map(([k, name]) => checkRow(k, name, rc[k], t))));
-      else parts.push(h('p', { class: 'rnone' }, icon('flask', 'sm'), 'No tests, lint or build ran this turn.'));
-    } else if (rc && (rc.searches || rc.reads) && !rc.edits) {
-      parts.push(h('h2', { class: 'lbl' }, 'Proof'), h('p', { class: 'rnone ro' }, icon('search', 'sm'), `Read only: ${rc.searches} ${rc.searches === 1 ? 'search' : 'searches'}, ${rc.reads} ${rc.reads === 1 ? 'read' : 'reads'}, nothing changed.`));
+      if (checks.length) {
+        parts.push(h('div', { class: 'checks' }, checks.map(([k, name]) => checkRow(k, name, rc[k], t))),
+          h('p', { class: 'checknote' }, 'Read from the commands’ own results, not from what the agent says.'));
+      }
     }
     fill(catchEl, parts);
     renderFiles();
   }
 
-  function stamp(kind, name, c) {
-    const ok = c.status === 'passed' && c.fresh;
-    const mid = c.status === 'failed' ? '✗' : !c.fresh ? '!' : kind === 'tests' ? (c.count ? String(c.count) : 'OK') : 'OK';
-    const top = c.status === 'failed' ? `${name.toUpperCase()} FAILED` : !c.fresh ? 'STALE' : kind === 'tests' ? 'TESTS PASSED' : name.toUpperCase();
-    return inkStamp(top, mid, c.name.toUpperCase(), ok ? 'ok' : c.status === 'failed' ? 'bad' : 'stale', mid.length > 3 ? 22 : 27);
+  function verdictBox(v, canReply) {
+    return h('div', { class: 'verdict ' + v.tone },
+      h('span', { class: 'vi', 'aria-hidden': 'true' }, icon(v.icon, 'sm')),
+      h('div', { class: 'vt' }, h('p', { class: 'vh' }, v.title), h('p', { class: 'vd' }, v.detail)),
+      v.ask && canReply ? h('button', { class: 'btn secondary small', type: 'button', onclick: () => draftReply(v.ask.text) }, v.ask.label) : null);
+  }
+
+  // Puts a reply in the box for the person to read and send; never sends it.
+  function draftReply(text) {
+    const draft = replyText.value.trimEnd();
+    replyText.value = draft ? `${draft}\n\n${text}` : text;
+    replyText.dispatchEvent(new Event('input'));
+    replyText.focus();
   }
 
   function checkRow(kind, name, c, t) {
     const key = kind;
     const open = openChecks.has(key);
     const run = [...t.steps].reverse().find((it) => it.kind === 'tool' && (it.summary || '').includes(c.command.slice(0, 40)));
-    const title = c.status === 'failed' ? `${name} failed` : c.status === 'running' ? `${name} running` : !c.fresh ? `${name} ran before the last edit` : `${name} passed${kind === 'tests' && c.count ? ' · ' + c.count : ''}`;
-    const cls = c.status === 'failed' ? 'bad' : c.status === 'running' ? 'run' : !c.fresh ? 'warn' : 'ok';
+    const state = checkState(c);
+    const cls = state === 'stale' || state === 'unclear' ? 'warn' : state;
     return h('button', { class: 'rchk' + (open ? ' open' : ''), type: 'button', 'aria-expanded': String(open), onclick: () => { if (open) openChecks.delete(key); else openChecks.add(key); reportKey = ''; renderReport(); } },
-      h('span', { class: 'ch' }, h('span', { class: 'st ' + cls, 'aria-hidden': 'true' }, icon(cls === 'ok' ? 'check' : cls === 'bad' ? 'x' : cls === 'run' ? 'hourglass' : 'alert', 'sm')),
-        h('span', { class: 'ct' }, title), h('time', { datetime: c.at }, agoLong(c.at)), icon('chevDown', 'sm', 'cv')),
+      h('span', { class: 'ch' }, h('span', { class: 'st ' + cls, 'aria-hidden': 'true' }, icon(CHECK_ICON[state], 'sm')),
+        h('span', { class: 'ct' }, checkTitle(name, c)), h('time', { datetime: c.at }, agoLong(c.at)), icon('chevDown', 'sm', 'cv')),
       h('span', { class: 'raw' }, c.command),
-      c.failed_before ? h('span', { class: 'note' }, `Failed ${c.failed_before === 1 ? 'once' : c.failed_before + ' times'} first` + failReason(t, c)) : null,
+      c.failed_before ? h('span', { class: 'note' }, failNote(t, c)) : null,
       open && run && run.result ? h('pre', { class: 'out' }, run.result) : null);
   }
 
@@ -764,7 +774,12 @@ export function sessionView(id) {
       const commit = cmd.match(/\bgit\s+commit\b.*?-[a-zA-Z]*m\s*["']([^"'\n]+)/);
       if (denied) { cls = 'block'; ic = 'shieldOff'; const l = commandLabel(cmd); label = 'Blocked: ' + l[0].toLowerCase() + l.slice(1); }
       else if (it.pending) { cls = 'now'; ic = 'hourglass'; label = kind ? `${kind} running` : it.note || commandLabel(cmd); }
-      else if (kind) { cls = it.is_error ? 'fail' : 'ok'; ic = it.is_error ? 'x' : 'check'; label = it.is_error ? `${kind} failed` : `${kind} passed`; }
+      else if (kind) {
+        const st = it.check_status || (it.is_error ? 'failed' : 'passed');
+        cls = st === 'passed' ? 'ok' : 'fail';
+        ic = st === 'passed' ? 'check' : st === 'failed' ? 'x' : 'alert';
+        label = st === 'passed' ? `${kind} passed` : st === 'failed' ? `${kind} failed` : `${kind} ran, result not shown`;
+      }
       else if (commit) { cls = 'ok'; ic = 'branch'; label = `Committed “${commit[1]}”`; }
       else if (/\bgit\s+push\b/.test(cmd)) { cls = it.is_error ? 'fail' : 'ok'; ic = 'upload'; label = it.is_error ? 'Push failed' : 'Pushed'; }
       else { cls = it.is_error ? 'fail' : 'step'; ic = it.is_error ? 'x' : 'terminal'; const l = it.note || commandLabel(cmd); label = it.is_error ? l + ' — failed' : l; }
@@ -776,7 +791,7 @@ export function sessionView(id) {
     } else if (it.tool_kind === 'web') { ic = 'globe'; label = 'Read the web'; }
     else if (it.tool_kind === 'mcp') { ic = 'plug'; label = 'Used ' + ((it.summary || '').replace(/^MCP\s+/, '').split(':')[0] || it.tool); }
     else { label = it.summary || it.tool || 'Used a tool'; }
-    const sub = it.is_error && !denied && lastLine ? oneLine(lastLine, 140) : null;
+    const sub = (it.is_error || it.check_status === 'failed') && !denied && lastLine ? oneLine(lastLine, 140) : null;
     // With the agent's own words as the label, the command itself shows
     // only when the step is opened.
     const words = it.tool_kind === 'shell' && !!it.note;
@@ -1069,11 +1084,17 @@ function statusWords(s) {
 }
 
 /** ": expected 3 attempts, got 5" — the telling line of the check's last failed run. */
+function failNote(t, c) {
+  const times = c.failed_before === 1 ? 'once' : c.failed_before + ' times';
+  return c.status === 'failed' ? `Also failed ${times} before this run` : `Failed ${times} first` + failReason(t, c);
+}
+
 function failReason(t, c) {
   const fail = [...t.steps].reverse().find((it) => it.kind === 'tool' && it.is_error && (it.summary || '').includes(c.command.slice(0, 40)));
   const lines = ((fail && fail.result) || '').split('\n').map((l) => l.trim()).filter(Boolean);
   const telling = lines.find((l) => /expected|assert|want|got|error:/i.test(l) && !/^(FAIL|ok)\b/.test(l)) || '';
-  return telling ? ': ' + oneLine(telling.replace(/^[^:]*_test\.go:\d+:\s*/, '').replace(/^[×✗x]\s*/, ''), 90) : ', then passed';
+  if (telling) return ': ' + oneLine(telling.replace(/^[^:]*_test\.go:\d+:\s*/, '').replace(/^[×✗x]\s*/, ''), 90);
+  return c.status === 'passed' ? ', then passed' : '';
 }
 
 function elapsedText(t) {

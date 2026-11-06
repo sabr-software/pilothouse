@@ -81,13 +81,28 @@ and numbers the transcript already holds.
 - **You asked**: the turn's prompt, marked when it came from Pilothouse or
   from another agent.
 - **\<Agent\> says**: what the agent last wrote, folded when it is long.
-- **Proof**: the last run of each check in the turn (tests, lint, build) with
-  its result, and how many tests passed when the output says. A check that ran
-  *before* the turn's last edit is marked stale: it doesn't cover the final
-  code. Also the files changed (+N/−M), the commit the turn made, and calls
-  that were blocked or failed. Commands are matched on what actually runs, so
-  `echo "npm test"` or a heredoc mentioning a test runner is not a test run.
-  A turn that only searched and read says so.
+- **Did it check its work?**: a plain verdict on the turn, then the last run of
+  each check (tests, lint, build) behind it, with how many tests passed when the
+  output says. *Checked after the last edit* means everything that ran passed on
+  the latest code. Otherwise it names what failed, says the code changed after
+  the last check, says *Not checked* when the turn changed files and ran nothing,
+  or says *Result not shown* when Pilothouse can't tell. When the agent has
+  stopped and something is missing, a button drafts a reply asking it to fix or
+  re-check; you read it and send it yourself.
+
+  Agents often trim a check's output (`go test ./... | tail -5`), and then the
+  exit status is `tail`'s, not the test run's. So Pilothouse reads the run's own
+  output instead, and a run it can't confirm is never shown as a pass. Any
+  failure in a command counts, even when a later run in the same command passed,
+  so an agent that breaks code on purpose to prove a test catches it shows as
+  failed until it runs the tests again. Edits made by shell commands such as
+  `sed -i` aren't seen as edits, so a check after one of those can still read as
+  *after the last edit*.
+
+  Also the files changed (+N/−M), the commit the turn made, and calls that were
+  blocked or failed. Commands are matched on what actually runs, so
+  `echo "npm test"` or a heredoc mentioning a test runner is not a test run. A
+  turn that only searched and read says so.
 - **How it got there**: the turn step by step in plain words, with reads
   folded together and subagents grouped; earlier turns below it.
 - **Changes**: every file changed with its diff.

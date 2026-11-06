@@ -50,29 +50,6 @@ export function svg(tag, attrs, ...kids) {
   return el;
 }
 
-let stampN = 0;
-/**
- * inkStamp('TESTS PASSED', '48', 'PNPM TEST', 'ok'): a round rubber stamp
- * (top and bottom text on arcs, a big middle), inked by the #ink filter.
- * tone: ok | bad | stale | ro. Thumps in when its view enters.
- */
-export function inkStamp(top, mid, bot, tone = 'ok', midSize = 27) {
-  const id = 'stp' + (++stampN);
-  const t = (attrs, text) => svg('text', { fill: 'currentColor', 'text-anchor': 'middle', 'font-weight': 800, ...attrs }, text);
-  return h('div', { class: 'stampw ' + tone, role: 'img', 'aria-label': [top, mid, bot].filter(Boolean).join(' ') },
-    svg('svg', { viewBox: '0 0 120 120', 'aria-hidden': 'true', focusable: 'false' },
-      svg('defs', null, svg('path', { id: id + 't', d: 'M22,60 A38,38 0 0 1 98,60' }), svg('path', { id: id + 'b', d: 'M12,60 A48,48 0 0 0 108,60' })),
-      svg('g', { filter: 'url(#ink)' },
-        svg('circle', { cx: 60, cy: 60, r: 55, fill: 'none', stroke: 'currentColor', 'stroke-width': 3.4 }),
-        svg('circle', { cx: 60, cy: 60, r: 50, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.2 }),
-        svg('circle', { cx: 60, cy: 60, r: 31, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.3 }),
-        t({ 'font-size': 9.6, 'letter-spacing': 1.5 }, svg('textPath', { href: '#' + id + 't', startOffset: '50%' }, top)),
-        t({ 'font-size': 9.5, 'letter-spacing': 1.5 }, svg('textPath', { href: '#' + id + 'b', startOffset: '50%' }, bot)),
-        t({ x: 60, y: 60 + midSize * 0.36, 'font-size': midSize }, mid),
-        t({ x: 12, y: 63.5, 'font-size': 8, 'font-weight': 400 }, '★'),
-        t({ x: 108, y: 63.5, 'font-size': 8, 'font-weight': 400 }, '★'))));
-}
-
 /**
  * fill(el, ...kids) replaces el's children; add(el, ...kids) appends.
  * Unlike the native replaceChildren/append they skip null/undefined/false

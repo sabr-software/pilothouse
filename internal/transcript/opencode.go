@@ -451,5 +451,8 @@ func openCodeTool(partID string, at time.Time, turn int, cwd string, p ocPart) a
 	}
 	it.Result = capTail(strings.TrimSpace(p.State.Output), maxResult)
 	it.IsError = status == "error" || status == "failed" || (p.State.Metadata.Exit != nil && *p.State.Metadata.Exit != 0)
+	if it.ToolKind == api.ToolShell {
+		it.CheckStatus = stepCheck(strings.TrimSpace(strings.TrimPrefix(it.Summary, "Run:")), it.Result, it.IsError)
+	}
 	return it
 }

@@ -48,6 +48,21 @@ var (
 func lintRunner(command string) string  { return runnerName(lintCommand, command) }
 func buildRunner(command string) string { return runnerName(buildCommand, command) }
 
+// checkCommands recognise each kind of check in a command.
+var checkCommands = map[string]*regexp.Regexp{"tests": testCommand, "lint": lintCommand, "build": buildCommand}
+
+// stepCheck is a finished command's result as a check, for the activity
+// feed, or "": its first check, tests before lint before build.
+func stepCheck(command, output string, isError bool) string {
+	head := commandHead(command)
+	for _, kind := range []string{"tests", "lint", "build"} {
+		if name, end := runnerAt(checkCommands[kind], head); name != "" {
+			return step{command: command, result: output, isError: isError}.checkStatus(kind, head, end)
+		}
+	}
+	return ""
+}
+
 // commandHead is what a shell command runs, for recognising checks: the
 // text before any heredoc, with quoted strings blanked, so a script that
 // merely mentions "go test" (python3 - <<'EOF' …) isn't a test run.
@@ -75,11 +90,17 @@ func commandHead(command string) string {
 }
 
 func runnerName(re *regexp.Regexp, command string) string {
-	m := re.FindStringSubmatch(command)
+	name, _ := runnerAt(re, command)
+	return name
+}
+
+// runnerAt names the check in command and says where its runner ends.
+func runnerAt(re *regexp.Regexp, command string) (name string, end int) {
+	m := re.FindStringSubmatchIndex(command)
 	if m == nil {
-		return ""
+		return "", 0
 	}
-	return strings.Join(strings.Fields(m[1]), " ")
+	return strings.Join(strings.Fields(command[m[2]:m[3]]), " "), m[3]
 }
 
 // commitSubject returns the first line of a git commit's message, "" when
@@ -186,24 +207,18 @@ func buildReceipt(turn int, since time.Time, steps []step) *api.Receipt {
 				rc.Commit = "(no message)"
 			}
 		}
-		status := "passed"
-		switch {
-		case s.pending:
-			status = "running"
-		case s.isError:
-			status = "failed"
-		}
 		head := commandHead(s.command)
-		for kind, name := range map[string]string{"tests": testRunner(head), "lint": lintRunner(head), "build": buildRunner(head)} {
+		for kind, re := range checkCommands {
+			name, end := runnerAt(re, head)
 			if name == "" {
 				continue
 			}
 			t := checks[kind]
-			if t.last != nil && t.last.Status == "failed" {
+			if t.last != nil && t.last.Status == checkFailed {
 				t.failed++
 			}
-			c := &api.Check{Name: name, Command: s.command, At: s.at, Status: status}
-			if kind == "tests" && status == "passed" {
+			c := &api.Check{Name: name, Command: s.command, At: s.at, Status: s.checkStatus(kind, head, end)}
+			if kind == "tests" && c.Status == checkPassed {
 				c.Count = testsPassed(s.result)
 			}
 			t.last = c
@@ -236,6 +251,14 @@ func buildReceipt(turn int, since time.Time, steps []step) *api.Receipt {
 	return rc
 }
 
+// output is a tool call's output, as much as the feed still has.
+func (f *feed) output(it *item) string {
+	if out, ok := f.checkOutput[it.ID]; ok {
+		return out
+	}
+	return it.Result
+}
+
 // receipt is the receipt of the feed's latest turn.
 func (f *feed) receipt() *api.Receipt {
 	turn, since := 0, time.Time{}
@@ -250,7 +273,7 @@ func (f *feed) receipt() *api.Receipt {
 		if it.At.Before(since) || it.Sidechain || it.Kind != api.ActivityTool || it.asks > 0 || it.plan {
 			continue
 		}
-		s := step{at: it.At, kind: it.ToolKind, tool: it.Tool, command: it.command, result: it.Result,
+		s := step{at: it.At, kind: it.ToolKind, tool: it.Tool, command: it.command, result: f.output(it),
 			isError: it.IsError, pending: it.Pending, denied: it.denied}
 		for _, e := range it.edits {
 			s.edits = append(s.edits, fileEdit{path: e.path, op: e.op, added: e.added, removed: e.removed})

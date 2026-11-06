@@ -12,6 +12,7 @@ import { link, toast, skeleton, emptyState, setTopTitle } from '../ui.js';
 import { markdownTitle } from '../markdown.js';
 import { avatar, section, sessionLine, machineTag } from './rows.js';
 import { askTitle } from './today.js';
+import { checkState, checkTitle, CHECK_ICON } from '../proof.js';
 
 function decider(by) {
   const me = store.me && 'device:' + store.me.device.id;
@@ -158,20 +159,18 @@ export function requestView(id) {
     if (turn.hidden) return;
     if (!rc) { fill(turn, label('d-turn', 'This turn'), h('p', { class: 'dmuted' }, 'Reading what this turn did…')); return; }
     const rows = [];
-    const check = (c, what, count) => {
+    const check = (c, what) => {
       if (!c) return;
-      const st = c.status === 'failed' ? 'bad' : c.status === 'running' ? 'run' : c.fresh ? 'ok' : 'warn';
-      const head = c.status === 'failed' ? `${what} failed`
-        : c.status === 'running' ? `${what} running`
-          : !c.fresh ? `${what} ran before the last edit` : `${what} passed` + (count ? ` · ${count}` : '');
+      const state = checkState(c);
+      const st = state === 'stale' || state === 'unclear' ? 'warn' : state;
       rows.push(h('div', { class: 'chk ' + st },
-        h('span', { class: 'st', 'aria-hidden': 'true' }, icon(st === 'ok' ? 'check' : st === 'bad' ? 'x' : st === 'run' ? 'hourglass' : 'alert', 'sm')),
+        h('span', { class: 'st', 'aria-hidden': 'true' }, icon(CHECK_ICON[state], 'sm')),
         h('div', { class: 'cb' },
-          h('div', { class: 'ch' }, h('b', null, head), h('time', { datetime: c.at }, agoLong(c.at))),
+          h('div', { class: 'ch' }, h('b', null, checkTitle(what, c)), h('time', { datetime: c.at }, agoLong(c.at))),
           h('span', { class: 'raw' }, c.command || c.name),
           c.failed_before ? h('span', { class: 'note' }, `Failed ${c.failed_before === 1 ? 'once' : c.failed_before + ' times'} before this run`) : null)));
     };
-    check(rc.tests, 'Tests', rc.tests && rc.tests.count);
+    check(rc.tests, 'Tests');
     check(rc.lint, 'Lint');
     check(rc.build, 'Build');
     if (!rc.tests) rows.push(h('div', { class: 'chk none' }, h('span', { class: 'st', 'aria-hidden': 'true' }, icon('flask', 'sm')), h('div', { class: 'cb' }, h('div', { class: 'ch' }, h('b', null, 'No tests ran this turn')))));

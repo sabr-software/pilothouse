@@ -15,8 +15,9 @@ import (
 // usage and the cost samples behind the burn rate.
 const (
 	DefaultMaxItems = 1000
-	maxText         = 2000 // prompt and reply text (head kept)
-	maxResult       = 1000 // tool output (tail kept)
+	maxText         = 2000  // prompt and reply text (head kept)
+	maxResult       = 1000  // tool output (tail kept)
+	maxCheckOutput  = 16384 // a check's output, for reading its result (tail kept)
 	maxSummary      = 200
 	maxFiles        = 500
 	recentMessages  = 512     // message ids whose usage is kept, for per-block dedupe
@@ -88,6 +89,8 @@ type feed struct {
 	costs       []costSample
 	lastMsg     map[string]string // chain → last assistant message id
 
+	checkOutput map[string]string // this turn's long check output, by item ID
+
 	files     map[string]*api.FileChange
 	fileRefs  map[string]int // file → edits counted in it
 	fileOrder []string       // least recently touched first
@@ -109,7 +112,7 @@ func newFeed(agent api.AgentKind, cwd string, p Pricer, loc *time.Location, maxI
 		agent: agent, cwd: cwd, pricer: p, loc: loc, maxItems: maxItems,
 		byID: map[string]*item{}, byDay: map[usageKey]*usageAgg{},
 		msgUsage: map[string]Tokens{}, seenMsgs: map[uint64]struct{}{}, lastMsg: map[string]string{},
-		files: map[string]*api.FileChange{}, fileRefs: map[string]int{},
+		files: map[string]*api.FileChange{}, fileRefs: map[string]int{}, checkOutput: map[string]string{},
 	}
 }
 
@@ -178,6 +181,11 @@ func (f *feed) result(id, text string, isError bool, exit *int) *item {
 	it.Result = capTail(strings.TrimSpace(text), maxResult)
 	it.IsError = isError || (exit != nil && *exit != 0)
 	it.exit = exit
+	out := capTail(strings.TrimSpace(text), maxCheckOutput)
+	if it.CheckStatus = stepCheck(it.command, out, it.IsError); it.CheckStatus != "" && len(out) > maxResult {
+		// A run's result can sit well above the tail a long command leaves.
+		f.checkOutput[it.ID] = out
+	}
 	if it.IsError && len(it.edits) > 0 {
 		// The edit didn't happen: take it back out of the files list.
 		f.applyEdits(it.edits, -1)
@@ -204,6 +212,7 @@ func (f *feed) settle(chain string) {
 func (f *feed) prompt(at time.Time) {
 	f.turn++
 	f.settle("")
+	clear(f.checkOutput) // the receipt only reads the latest turn
 	f.pendingTurn = f.day(at)
 }
 

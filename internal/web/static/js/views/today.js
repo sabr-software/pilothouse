@@ -315,13 +315,16 @@ export function todayView() {
     if (t) {
       if (t.status === 'failed') parts.push(h('span', { class: 'bad' }, '✗ tests'));
       else if (t.status === 'running') parts.push(h('span', null, 'tests running'));
+      else if (t.status === 'unclear') parts.push(h('span', { class: 'warn' }, '? tests'));
       else if (!t.fresh) parts.push(h('span', { class: 'warn' }, 'tests before last edit'));
       else parts.push(h('span', { class: 'ok' }, '✓ ' + (t.count ? `${t.count} tests` : 'tests')));
     }
     for (const [k, label] of [['lint', 'lint'], ['build', 'build']]) {
       const c = rc[k];
       if (!c || c.status === 'running') continue;
-      parts.push(c.status === 'failed' ? h('span', { class: 'bad' }, '✗ ' + label) : h('span', { class: c.fresh ? 'ok' : 'warn' }, '✓ ' + label));
+      if (c.status === 'failed') parts.push(h('span', { class: 'bad' }, '✗ ' + label));
+      else if (c.status === 'unclear') parts.push(h('span', { class: 'warn' }, '? ' + label));
+      else parts.push(h('span', { class: c.fresh ? 'ok' : 'warn' }, '✓ ' + label));
     }
     if (rc.files) parts.push(h('span', null, h('span', { class: 'add' }, '+' + rc.added), ' ', h('span', { class: 'del' }, '−' + rc.removed)));
     else if (rc.searches || rc.reads) {
@@ -371,11 +374,12 @@ export function todayView() {
 /** Fills a "this turn" box from a receipt: the tests line, then files and commit. */
 export function fillProof(el, rc) {
   const t = rc.tests;
-  el.className = 'thisturn' + (t && t.status === 'failed' ? ' is-bad' : t && t.status === 'passed' && !t.fresh ? ' is-warn' : '');
+  el.className = 'thisturn' + (t && t.status === 'failed' ? ' is-bad' : t && (t.status === 'unclear' || (t.status === 'passed' && !t.fresh)) ? ' is-warn' : '');
   let tests;
   if (!t) tests = h('div', { class: 'muted' }, icon('flask', 'sm'), h('span', null, 'No tests ran this turn'));
   else if (t.status === 'failed') tests = h('div', { class: 'bad' }, icon('x', 'sm'), h('span', null, h('b', null, 'Tests failed'), ' · ', h('span', { class: 'mono' }, t.name)));
   else if (t.status === 'running') tests = h('div', null, icon('hourglass', 'sm'), h('span', null, h('b', null, 'Tests running'), ' · ', h('span', { class: 'mono' }, t.name)));
+  else if (t.status === 'unclear') tests = h('div', { class: 'warn' }, icon('alert', 'sm'), h('span', null, h('b', null, 'Tests ran, result not shown'), ' · ', h('span', { class: 'mono' }, t.name)));
   else if (!t.fresh) tests = h('div', { class: 'warn' }, icon('alert', 'sm'), h('span', null, h('b', null, 'Tests ran before the last edit'), ' · ', h('span', { class: 'mono' }, t.name)));
   else tests = h('div', { class: 'one', title: t.count ? `${t.count} tests passed` : null }, icon('check', 'sm'), h('span', { class: 't' }, h('b', null, 'Tests passed'), ' after the last edit · '), h('span', { class: 'mono' }, t.name));
   const changes = rc.files

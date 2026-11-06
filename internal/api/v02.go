@@ -210,12 +210,15 @@ type ActivityItem struct {
 	// Note is the agent's own plain-words line for a tool call, when it
 	// wrote one ("Run the web tests"): Claude Code's and OpenCode's
 	// shell description.
-	Note      string `json:"note,omitempty"`
-	Result    string `json:"result,omitempty"` // tail of the tool output, capped
-	IsError   bool   `json:"is_error,omitempty"`
-	Source    string `json:"source,omitempty"` // prompts: "human" | "pilothouse" | "peer"
-	Sidechain bool   `json:"sidechain,omitempty"`
-	Pending   bool   `json:"pending,omitempty"` // tool call without a result yet
+	Note    string `json:"note,omitempty"`
+	Result  string `json:"result,omitempty"` // tail of the tool output, capped
+	IsError bool   `json:"is_error,omitempty"`
+	// CheckStatus is a test, lint or build step's result (see Check.Status).
+	// The exit status can't say: "go test ./... | tail" reports tail's.
+	CheckStatus string `json:"check_status,omitempty"`
+	Source      string `json:"source,omitempty"` // prompts: "human" | "pilothouse" | "peer"
+	Sidechain   bool   `json:"sidechain,omitempty"`
+	Pending     bool   `json:"pending,omitempty"` // tool call without a result yet
 }
 
 // FileChange is a file a session touched.
@@ -285,7 +288,7 @@ type Check struct {
 	Name         string    `json:"name"` // the runner as people say it: "go test", "pnpm lint"
 	Command      string    `json:"command"`
 	At           time.Time `json:"at"`
-	Status       string    `json:"status"`                  // running | passed | failed
+	Status       string    `json:"status"`                  // running | passed | failed | unclear (its output doesn't say)
 	Count        int       `json:"count,omitempty"`         // tests passed, when the output says
 	Fresh        bool      `json:"fresh"`                   // ran after the turn's last edit (or nothing was edited)
 	FailedBefore int       `json:"failed_before,omitempty"` // failed runs of this check earlier in the turn

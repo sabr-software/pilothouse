@@ -16,7 +16,7 @@
 
 importScripts('/js/keystore.js');
 
-const CACHE = 'pilothouse-shell-v6';
+const CACHE = 'pilothouse-shell-v7';
 // Every file the app needs offline. internal/web's tests check that this
 // list matches the embedded js/ and css/ files.
 const SHELL = [
@@ -50,6 +50,7 @@ const SHELL = [
   '/js/views/tasks.js',
   '/js/views/terminal.js',
   '/js/views/today.js',
+  '/js/proof.js',
   '/vendor/xterm/xterm.mjs',
   '/vendor/xterm/addon-fit.mjs',
   '/vendor/xterm/xterm.css',
