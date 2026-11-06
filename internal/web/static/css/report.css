@@ -206,6 +206,13 @@ main.bare:has(.view.rep) { padding-bottom: 0; }
 .qhead time { margin-left: auto; font-family: var(--mono); }
 .qask { margin: 4px 0 10px; padding: 0 14px; font: 18px/1.3 var(--serif); color: var(--text); }
 .qcard.perm .qbody { background: var(--open-bg); padding-top: 10px; }
+.qsub { margin: 18px 4px 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; color: var(--text-3); }
+.qcard.terminal { display: block; color: inherit; text-decoration: none; border: 1.5px dashed var(--border-strong); background: var(--surface-2); box-shadow: none; }
+.qcard.terminal:hover { background: var(--surface-3); }
+.qcard.terminal .qask { margin-bottom: 6px; font-size: 16px; }
+.qsaid { margin: 0 0 6px; padding: 0 14px; font-size: 13px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qsaid.mono { font-family: var(--mono); font-size: 12px; }
+.qhint { margin: 0; padding: 0 14px 12px; font-size: 13px; color: var(--text-3); }
 .qcard .req.ledger-dec { padding: 0 14px 14px 14px; }
 .qcard .req.ledger-dec::before { display: none; }
 .qcard .qgo { margin: 0 14px 14px; display: flex; justify-content: center; gap: 6px; }

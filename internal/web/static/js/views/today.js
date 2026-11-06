@@ -87,17 +87,21 @@ export function todayView() {
     // The open decision leads; the rest by how soon they hand back.
     open.sort((a, b) => (b.id === openId) - (a.id === openId) || toMs(a.expires_at) - toMs(b.expires_at));
     const nOpen = open.filter((r) => r.status === 'open').length;
+    const nDesk = stepped.length + desk.length;
     fill(counts,
-      h('span', { class: nOpen ? 'need' : '' }, h('b', null, String(nOpen)), ' need you'), ' · ',
+      h('span', { class: nOpen + nDesk ? 'need' : '' }, h('b', null, String(nOpen + nDesk)), ' need you'), ' · ',
       h('span', null, h('b', null, String(working.length)), ' working'), ' · ',
       h('span', null, h('b', null, String(finished.length)), ' finished'),
       today && today.cost != null ? [' · ', link('/insights', { class: 'cost', 'aria-label': `About ${money(today.cost)} spent today, see Insights` }, '≈ ', h('b', null, money(today.cost)))] : null);
 
     const groups = [];
-    groups.push(section('need', 'Needs you', nOpen,
-      open.length ? open.map((r) => needRow(r, wide)) : [clearCard()]));
-    if (stepped.length || desk.length) {
-      groups.push(section('desk', 'At the computer', stepped.length + desk.length,
+    // "All clear" only when it is: not above a prompt waiting in a terminal.
+    if (open.length || !nDesk) {
+      groups.push(section('need', 'Needs you', nOpen,
+        open.length ? open.map((r) => needRow(r, wide)) : [clearCard()]));
+    }
+    if (nDesk) {
+      groups.push(section('desk', 'At the computer', nDesk,
         [...stepped.map(steppedRow), ...desk.map(deskRow)]));
     }
     if (working.length) groups.push(section('work', 'Working', working.length, working.map(workRow)));
@@ -223,12 +227,11 @@ export function todayView() {
   }
 
   function deskRow(s) {
-    const what = s.block_kind === 'auth' ? 'Needs you to sign in' : s.block_kind === 'question' ? 'Asking a question in its terminal' : 'Asking in its terminal';
     return h('div', { class: 'nrow' },
       link('/s/' + s.id, { class: 'lrow', 'data-nav': '', 'data-session': s.id },
         mark('desk', 'monitor', s.agent),
         h('span', { class: 'lb' },
-          h('span', { class: 'l1' }, h('b', null, repoName(s)), mt(s), h('em', null, what),
+          h('span', { class: 'l1' }, h('b', null, repoName(s)), mt(s), h('em', null, terminalWords(s)),
             h('time', { 'data-ago': s.updated_at }, ago(s.updated_at)), icon('chev', 'sm', 'cv')),
           h('span', { class: 'l2' }, 'answer it on your computer'))));
   }
@@ -402,6 +405,12 @@ function kindOf(r) {
 }
 
 /** What a request asks, as a question a person would ask. */
+/** What a session is doing when only its terminal can answer it. */
+export function terminalWords(s) {
+  if (s.block_kind === 'auth') return 'Needs you to sign in';
+  return s.block_kind === 'question' ? 'Asking a question in its terminal' : 'Asking in its terminal';
+}
+
 export function askTitle(r) {
   const kind = kindOf(r);
   if (kind === 'question') {
