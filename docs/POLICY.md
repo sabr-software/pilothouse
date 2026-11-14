@@ -578,7 +578,11 @@ confirm (`ask`) any tool call that:
 - **runs a pilothouse admin command**: `approve`, `deny`, `policy`
   (except the read-only `policy check|test|status|replay|rules`), `pair`,
   `devices`, `remote`, `service`, `hooks`, `here`, `away`, `auto`, `stop`,
-  `open`, `setup`; or
+  `open`, `setup`. Asking for help is not held, because it prints help and
+  changes nothing: `--help` or `-h` as the last word (`pilothouse approve
+  --help`, `pilothouse policy add -h`), and `pilothouse policy`, `pilothouse
+  hooks` or `pilothouse task` with nothing after them. An agent that was
+  held often runs one of these to find out why; or
 - **writes to a protected path**: the Pilothouse home (`~/.pilothouse/**`, including
   the config, database, keys, policy and trust list), the socket directory, each
   agent's user settings files (`~/.claude/settings.json`,
@@ -714,7 +718,8 @@ running; `add`, `enable`, `disable`, `remove` and `preset … on|off` go through
 the daemon, or edit `~/.pilothouse/rules.yaml` directly (same checks, same
 lock) when it isn't running. An agent running these is stopped by the
 [self-protection rule](#built-in-rule-pilothouse-self-protection), except the
-read-only `check`, `test`, `status`, `replay` and `rules`.
+read-only `check`, `test`, `status`, `replay` and `rules`, a bare
+`pilothouse policy`, and any of them with `--help`.
 
 Colours are used only on a terminal and never with `NO_COLOR`.
 

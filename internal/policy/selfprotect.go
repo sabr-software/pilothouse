@@ -2,7 +2,9 @@ package policy
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -42,6 +44,54 @@ var readOnlySub = map[string]map[string]bool{
 // readOnlyPolicy are `pilothouse policy` subcommands that only read: an agent
 // helping someone write rules may run them freely.
 var readOnlyPolicy = map[string]bool{"check": true, "test": true, "status": true, "replay": true, "help": true, "rules": true}
+
+// helpGroups are admin commands that only group subcommands: with nothing
+// after them they print their help and do nothing, which is what an agent
+// runs first when it wants to know why a call was held. internal/cli checks
+// this list against the real commands.
+var helpGroups = map[string]bool{"policy": true, "hooks": true, "task": true}
+
+// AdminCommands and HelpGroups list what the self-protection rule treats as
+// admin commands, and which of them are help when run bare. They exist so
+// internal/cli can test the lists against the commands it really has.
+func AdminCommands() []string { return slices.Sorted(maps.Keys(adminCommands)) }
+func HelpGroups() []string    { return slices.Sorted(maps.Keys(helpGroups)) }
+
+// helpOnly reports whether the words after an admin command make it print
+// help and do nothing: nothing at all after a command group (`pilothouse
+// policy`), or --help/-h as the last word after plain names (`pilothouse
+// policy add --help`, `pilothouse approve r_1 -h`). Any other word there (a
+// flag, which may take the next word as its value; an empty, quoted-in or
+// computed word; a glob) could change what runs, so the call stays held.
+func helpOnly(cmd string, rest []string) bool {
+	if len(rest) == 0 {
+		return helpGroups[cmd]
+	}
+	if last := rest[len(rest)-1]; last != "--help" && last != "-h" {
+		return false
+	}
+	for _, w := range rest[:len(rest)-1] {
+		if !isPlainWord(w) {
+			return false
+		}
+	}
+	return true
+}
+
+// isPlainWord: letters, digits and _ . : - only, not starting with a dash.
+// Such a word is a name or an id; the shell passes it on as written.
+func isPlainWord(w string) bool {
+	if w == "" || w[0] == '-' {
+		return false
+	}
+	for i := 0; i < len(w); i++ {
+		c := w[i]
+		if !isLetter(c) && !(c >= '0' && c <= '9') && c != '_' && c != '.' && c != ':' && c != '-' {
+			return false
+		}
+	}
+	return true
+}
 
 // otherCommands are the remaining pilothouse subcommands; seeing one ends the
 // search for a subcommand (so `pilothouse log --grep approve` is not a hit).
@@ -395,6 +445,11 @@ func (a *spAnalyzer) pilothouse(args []string, viaXargs bool, cwd string, depth 
 			if ro, ok := readOnlySub[w]; ok && ro[firstNonFlag(args[j+1:])] {
 				return
 			}
+			// xargs adds words after the ones written here, so what looks
+			// like help may not be.
+			if !viaXargs && helpOnly(w, args[j+1:]) {
+				return
+			}
 			a.hit("runs `pilothouse %s`", w)
 			return
 		}
@@ -493,7 +548,9 @@ func (a *spAnalyzer) findExec(args []string, cwd string, depth int) {
 		switch args[j] {
 		case "-exec", "-execdir", "-ok", "-okdir":
 			k := j + 1
-			for k < len(args) && args[k] != ";" && args[k] != "+" {
+			// `+` ends the command only right after `{}`; anywhere else it
+			// is one more argument.
+			for k < len(args) && args[k] != ";" && !(args[k] == "+" && args[k-1] == "{}") {
 				k++
 			}
 			a.analyze(shellJoin(args[j+1:k]), cwd, depth+1)

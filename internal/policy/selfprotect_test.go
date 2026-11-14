@@ -44,7 +44,6 @@ func TestSelfProtectionShell(t *testing.T) {
 		{"pilothouse policy init --force", true},
 		{"pilothouse policy trust .", true},
 		{"pilothouse policy untrust", true},
-		{"pilothouse policy", true},
 		// 0.2 commands that act for the person or route approvals.
 		{"pilothouse answer r_1 yes", true},
 		{"pilothouse reply s_1 'ship it'", true},
