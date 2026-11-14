@@ -30,9 +30,10 @@ const (
 // done once its work is safely on the branch; Task.Note says where it went
 // and Task.PRURL links the pull request.
 //
-// It refuses, changing nothing, when there is nothing to ship or when a
-// file task.yaml copied in (.env and the like) was committed on the
-// branch. A failed push leaves the task open, with the work committed.
+// It refuses, changing nothing, when there is nothing to ship, when the
+// worktree is not on the task's branch, or when a file task.yaml copied in
+// (.env and the like) is anywhere in the branch's history. A failed push
+// leaves the task open, with the work committed.
 func (m *Manager) Ship(ctx context.Context, ref string) (api.Task, error) {
 	t, err := m.Get(ref)
 	if err != nil {
@@ -47,6 +48,9 @@ func (m *Manager) Ship(ctx context.Context, ref string) (api.Task, error) {
 	wt := dirExists(t.Worktree)
 	dirty := false
 	if wt {
+		if err := checkOnBranch(ctx, t); err != nil {
+			return t, err
+		}
 		if dirty, err = hasLeftovers(ctx, t); err != nil {
 			return t, err
 		}
@@ -64,6 +68,13 @@ func (m *Manager) Ship(ctx context.Context, ref string) (api.Task, error) {
 
 	if err := m.stopAgent(ctx, t); err != nil {
 		return t, err
+	}
+	if wt {
+		// Again now that the agent can no longer move HEAD: the leftovers
+		// are committed wherever it points.
+		if err := checkOnBranch(ctx, t); err != nil {
+			return t, err
+		}
 	}
 	if dirty {
 		if err := commitLeftovers(ctx, t); err != nil {
@@ -123,6 +134,28 @@ func (m *Manager) shipped(ctx context.Context, t api.Task, wt bool) (api.Task, e
 	return t, nil
 }
 
+// checkOnBranch refuses to finish a task whose worktree is not on the
+// task's branch. An agent that detached HEAD (git checkout --detach, a
+// rebase stopped half-way) or switched branches has committed where the
+// branch does not see it: the branch would be shipped without that work,
+// and removing the worktree drops what only its HEAD reaches.
+func checkOnBranch(ctx context.Context, t api.Task) error {
+	head, err := gitOutput(ctx, t.Worktree, "symbolic-ref", "--quiet", "HEAD")
+	if err == nil && head == "refs/heads/"+t.Branch {
+		return nil
+	}
+	where := "a detached HEAD"
+	if err == nil {
+		where = "branch " + strings.TrimPrefix(head, "refs/heads/")
+	}
+	at, err := gitOutput(ctx, t.Worktree, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("worktree %s is on %s, not on the task's branch %s, so commits made there would be left behind — bring them over (cd %s && git checkout %s && git merge %s) and try again",
+		t.Worktree, where, t.Branch, t.Worktree, t.Branch, at)
+}
+
 // hasLeftovers reports whether the worktree has changes the agent did not
 // commit, not counting task.yaml's copies.
 func hasLeftovers(ctx context.Context, t api.Task) (bool, error) {
@@ -159,7 +192,8 @@ func checkCopiedNotCommitted(ctx context.Context, t api.Task) error {
 	if t.Setup == nil || len(t.Setup.Copied) == 0 {
 		return nil
 	}
-	args := append([]string{"--literal-pathspecs", "diff", "--name-only", "-z", t.BaseRef + "..." + "refs/heads/" + t.Branch, "--"}, t.Setup.Copied...)
+	branch := "refs/heads/" + t.Branch
+	args := append([]string{"--literal-pathspecs", "diff", "--name-only", "-z", t.BaseRef + "..." + branch, "--"}, t.Setup.Copied...)
 	out, err := gitOutput(ctx, t.Repo, args...)
 	if err != nil {
 		return err
@@ -168,7 +202,36 @@ func checkCopiedNotCommitted(ctx context.Context, t api.Task) error {
 		return fmt.Errorf("not shipping: %s committed %s, which %s copied from your checkout — remove it from the branch's history first",
 			t.Branch, strings.ReplaceAll(names, "\x00", ", "), ConfigFile)
 	}
-	return nil
+	// A later commit that deletes the file takes it off the branch's tip,
+	// not out of what a push sends: look at every commit the branch adds
+	// (--full-history: those on a side branch merged back in, too).
+	args = append([]string{"--literal-pathspecs", "log", "--full-history", "-m", "--reverse", "--format=%h", "--name-only", "-z", t.BaseRef + ".." + branch, "--"}, t.Setup.Copied...)
+	if out, err = gitOutput(ctx, t.Repo, args...); err != nil {
+		return err
+	}
+	var first string // the oldest commit that has one of them
+	var names []string
+	copied, seen := copiedSet(t), map[string]bool{}
+	for _, tok := range strings.Split(out, "\x00") {
+		switch tok = strings.TrimLeft(tok, "\n"); {
+		case tok == "":
+		case copied[tok]:
+			if !seen[tok] {
+				seen[tok] = true
+				names = append(names, tok)
+			}
+		case first == "":
+			first = tok
+		}
+	}
+	if first == "" {
+		return nil
+	}
+	if len(names) == 0 {
+		names = []string{"a file"}
+	}
+	return fmt.Errorf("not shipping: %s has %s in its history (since commit %s), which %s copied from your checkout — deleting it in a later commit does not take it out of what is pushed, so rewrite the branch's history first (git rebase -i %s)",
+		t.Branch, strings.Join(names, ", "), first, ConfigFile, t.BaseRef)
 }
 
 // commitLeftovers commits everything the agent left uncommitted except

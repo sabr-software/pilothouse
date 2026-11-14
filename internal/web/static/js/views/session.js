@@ -9,7 +9,7 @@
 
 import { h, icon, agentName, agentInitials, agentClass, repoName, stateLabel, agoLong, clock, relPath, fill, add, toMs } from '../dom.js';
 import { store, api, onEvent, onOtherMachine } from '../api.js';
-import { requestCard } from '../card.js';
+import { requestCard, pruneCards } from '../card.js';
 import { renderMarkdown } from '../markdown.js';
 import { askTitle, plainStep, commandLabel, fillProof } from './today.js';
 import { verdict, checkState, checkTitle, CHECK_ICON } from '../proof.js';
@@ -454,13 +454,14 @@ export function sessionView(id) {
   function checkRow(kind, name, c, t) {
     const key = kind;
     const open = openChecks.has(key);
-    const run = [...t.steps].reverse().find((it) => it.kind === 'tool' && (it.summary || '').includes(c.command.slice(0, 40)));
+    const cmd = (c.command || '').slice(0, 40);
+    const run = cmd ? [...t.steps].reverse().find((it) => it.kind === 'tool' && (it.summary || '').includes(cmd)) : null;
     const state = checkState(c);
     const cls = state === 'stale' || state === 'unclear' ? 'warn' : state;
     return h('button', { class: 'rchk' + (open ? ' open' : ''), type: 'button', 'aria-expanded': String(open), onclick: () => { if (open) openChecks.delete(key); else openChecks.add(key); reportKey = ''; renderReport(); } },
       h('span', { class: 'ch' }, h('span', { class: 'st ' + cls, 'aria-hidden': 'true' }, icon(CHECK_ICON[state], 'sm')),
         h('span', { class: 'ct' }, checkTitle(name, c)), h('time', { datetime: c.at }, agoLong(c.at)), icon('chevDown', 'sm', 'cv')),
-      h('span', { class: 'raw' }, c.command),
+      c.command || c.name ? h('span', { class: 'raw' }, c.command || c.name) : null,
       c.failed_before ? h('span', { class: 'note' }, failNote(t, c)) : null,
       open && run && run.result ? h('pre', { class: 'out' }, run.result) : null);
   }
@@ -511,7 +512,8 @@ export function sessionView(id) {
   }
 
   async function sendReply() {
-    const text = replyText.value.replace(/\s+$/, '');
+    const typed = replyText.value;
+    const text = typed.replace(/\s+$/, '');
     if (!text.trim() || sending) return;
     if (new TextEncoder().encode(text).length > 16384) {
       toast('That message is too long (16 KB at most).', 'bad');
@@ -526,7 +528,10 @@ export function sessionView(id) {
     sending = false;
     fill(sendBtn, ico('send', 'sm'), h('span', null, 'Send'));
     if (res.ok) {
-      replyText.value = '';
+      // The box stays open while a reply is on its way: keep what was typed
+      // since, and only take out what was sent.
+      const now = replyText.value;
+      replyText.value = now === typed ? '' : now.startsWith(typed) ? now.slice(typed.length).replace(/^\s+/, '') : now;
       grow();
       stopFirst.checked = false;
       sent.push({ text: text.trim(), at: new Date().toISOString(), note: (res.data && res.data.note) || '' });
@@ -1064,6 +1069,9 @@ export function sessionView(id) {
       clearTimeout(refetch);
       document.removeEventListener('visibilitychange', onVisibility);
       markVisited(id);
+      // The request's card holds this visit's "this turn" box: the next
+      // visit builds a card around its own.
+      pruneCards(new Set(), 'session');
     },
   };
 }
@@ -1090,7 +1098,8 @@ function failNote(t, c) {
 }
 
 function failReason(t, c) {
-  const fail = [...t.steps].reverse().find((it) => it.kind === 'tool' && it.is_error && (it.summary || '').includes(c.command.slice(0, 40)));
+  const cmd = (c.command || '').slice(0, 40);
+  const fail = cmd ? [...t.steps].reverse().find((it) => it.kind === 'tool' && it.is_error && (it.summary || '').includes(cmd)) : null;
   const lines = ((fail && fail.result) || '').split('\n').map((l) => l.trim()).filter(Boolean);
   const telling = lines.find((l) => /expected|assert|want|got|error:/i.test(l) && !/^(FAIL|ok)\b/.test(l)) || '';
   if (telling) return ': ' + oneLine(telling.replace(/^[^:]*_test\.go:\d+:\s*/, '').replace(/^[×✗x]\s*/, ''), 90);

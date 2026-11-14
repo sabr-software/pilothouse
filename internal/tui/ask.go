@@ -102,7 +102,9 @@ func (m *Model) openAsk(req *api.Request, digit int) tea.Cmd {
 	}
 	m.mode = modeQuestion
 	if digit > 0 {
-		m.ask.cursor = min(digit-1, len(req.Questions[0].Options)-1)
+		// A question can come without options (own words only): the
+		// cursor never goes below the first position.
+		m.ask.cursor = max(0, min(digit-1, len(req.Questions[0].Options)-1))
 	}
 	return nil
 }
@@ -202,6 +204,7 @@ func (m *Model) onQuestionKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 // chooseCursor answers with what the cursor is on: an option, the
 // toggled options of a multi-select question, or "Other…".
 func (m *Model) chooseCursor(req api.Request, q api.Question) tea.Cmd {
+	m.ask.cursor = max(m.ask.cursor, 0) // it indexes the options below
 	if m.ask.cursor >= len(q.Options) {
 		return m.startOther(q)
 	}
@@ -509,7 +512,7 @@ func planTitle(r api.Request) string {
 	if t == "" {
 		return "plan"
 	}
-	return t
+	return oneLine(t)
 }
 
 // sessionByID is a copy of a known session, or nil.

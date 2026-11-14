@@ -25,8 +25,8 @@ var adminCommands = map[string]bool{
 	"remote": true, "service": true, "hooks": true, "here": true, "away": true,
 	"auto": true, "stop": true, "open": true, "setup": true,
 	// 0.2: answering a question and replying to a session act for the
-	// person; notify points notifications (with one-tap Allow buttons) and
-	// Telegram decisions somewhere; task done/abandon push or delete work.
+	// person; notify points notifications (with their Deny buttons) and
+	// Telegram answers somewhere; task done/abandon push or delete work.
 	"answer": true, "reply": true, "notify": true, "task": true,
 }
 
@@ -54,7 +54,7 @@ var otherCommands = map[string]bool{
 // Command wrappers that run their arguments as a command. valueFlags are
 // options that consume the next word.
 var wrappers = map[string]map[string]bool{
-	"sudo":       {"-u": true, "-g": true, "-h": true, "-p": true, "-C": true, "-D": true, "-r": true, "-t": true, "-U": true, "-T": true},
+	"sudo":       {"-u": true, "-g": true, "-h": true, "-p": true, "-C": true, "-D": true, "-r": true, "-t": true, "-U": true, "-T": true, "--chdir": true},
 	"doas":       {"-u": true, "-C": true},
 	"nohup":      nil,
 	"time":       nil,
@@ -117,6 +117,13 @@ type spAnalyzer struct {
 	raw            string
 	indirect       bool   // the line feeds text to an interpreter
 	reason         string // first finding, human readable
+	// vars are NAME=value assignments seen earlier on the line, so that
+	// `D=~/.pilothouse; rm $D/policy.yaml` resolves.
+	vars map[string]string
+	// pattern is set by protectedArg when the hit came from a glob or
+	// brace list rather than a path written out; unchecked when that
+	// pattern stands for more names than were looked at.
+	pattern, unchecked bool
 }
 
 const maxShellDepth = 8
@@ -185,12 +192,17 @@ func (a *spAnalyzer) command(cmd *shCmd, cwd *string, depth int) {
 			continue // fd duplication (2>&1), not a file
 		}
 		if p, ok := a.protectedArg(r.target, *cwd); ok {
-			a.hit("writes to %s", a.describe(p))
+			if a.pattern {
+				a.hit("writes to %s, %s", r.target, a.canName(p))
+			} else {
+				a.hit("writes to %s", a.describe(p))
+			}
 			return
 		}
 	}
 	words := cmd.words
 	viaXargs := false
+	dir := *cwd // where this command runs: `env -C` and `sudo -D` move it
 	i := 0
 	for i < len(words) {
 		w := words[i]
@@ -201,42 +213,49 @@ func (a *spAnalyzer) command(cmd *shCmd, cwd *string, depth int) {
 		base := cmdBase(w)
 		if vf, ok := wrappers[base]; ok {
 			viaXargs = viaXargs || base == "xargs"
-			i = skipOptions(words, i+1, vf)
+			opts := i + 1
+			i = skipOptions(words, opts, vf)
+			if base == "sudo" {
+				dir = a.chdirFlag(words[opts:i], dir, "-D")
+			}
 			if (base == "timeout" || base == "gtimeout") && i < len(words) {
 				i++ // the duration
 			}
 			continue
 		}
 		if base == "env" {
-			i = a.skipEnv(words, i+1, *cwd, depth)
+			i = a.skipEnv(words, i+1, &dir, depth)
 			continue
 		}
 		break
 	}
 	if i >= len(words) {
+		a.assign(words) // only NAME=value words: they set shell variables
 		return
 	}
 	w, args := words[i], words[i+1:]
 	base := cmdBase(w)
 	switch {
 	case base == "pilothouse":
-		a.pilothouse(args, viaXargs, *cwd, depth)
+		a.pilothouse(args, viaXargs, dir, depth)
 		return
 	case shells[base]:
-		a.shell(cmd, args, *cwd, depth)
+		a.shell(cmd, args, dir, depth)
 		return
 	case base == "eval":
-		a.analyze(strings.Join(args, " "), *cwd, depth+1)
+		a.analyze(strings.Join(args, " "), dir, depth+1)
 		return
 	case base == "cd" || base == "pushd":
 		if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-			*cwd = absPath(args[0], *cwd, a.home)
+			*cwd = absPath(a.expandVars(args[0]), *cwd, a.home)
 		} else if len(args) == 0 {
 			*cwd = a.home
 		}
 		return
+	case declarers[base]:
+		a.assign(args)
 	case base == "find":
-		a.findExec(args, *cwd, depth)
+		a.findExec(args, dir, depth)
 	case interpreters[base]:
 		a.indirect = true
 	case strings.ContainsRune(w, '$'):
@@ -253,9 +272,18 @@ func (a *spAnalyzer) command(cmd *shCmd, cwd *string, depth int) {
 	if readers[base] && !hasAnyFlag(args, readerWriteFlags[base]) {
 		return
 	}
+	// Taking a whole directory away takes the protected files in it.
+	for _, arg := range treeArgs(base, args) {
+		if p := a.roots.heldBy(absPath(a.expandVars(arg), dir, a.home), a.dotGlobs()); p != "" {
+			a.hit("runs %s on %s, which holds %s", base, arg, a.describe(p))
+			return
+		}
+	}
 	for _, arg := range args {
-		if p, ok := a.protectedArg(arg, *cwd); ok {
-			if isBareWord(arg) {
+		if p, ok := a.protectedArg(arg, dir); ok {
+			if a.pattern {
+				a.hit("runs %s on %s, %s", base, arg, a.canName(p))
+			} else if isBareWord(arg) {
 				// `git status` in a protected directory: "status" only
 				// resolves to a protected path because of where it runs.
 				a.hit("runs `%s %s` in %s", base, arg, a.describe(filepath.Dir(p)))
@@ -265,6 +293,50 @@ func (a *spAnalyzer) command(cmd *shCmd, cwd *string, depth int) {
 			return
 		}
 	}
+}
+
+// treeArgs returns the arguments a command removes, moves or re-modes as
+// whole directory trees: `rm -r`, the sources of `mv`, `chmod -R`.
+func treeArgs(base string, args []string) []string {
+	recursive := hasAnyFlag(args, []string{"-r", "-R", "--recursive"})
+	var paths []string
+	target := false // the next word is mv's -t directory
+	for i, w := range args {
+		switch {
+		case w == "--":
+			paths = append(paths, args[i+1:]...)
+		case target:
+			target = false
+			continue
+		case w == "-t" || w == "--target-directory":
+			target = true
+			continue
+		case strings.HasPrefix(w, "-") && len(w) > 1:
+			continue
+		default:
+			paths = append(paths, w)
+			continue
+		}
+		break
+	}
+	switch base {
+	case "rm":
+		if recursive {
+			return paths
+		}
+	case "mv":
+		if hasAnyFlag(args, []string{"-t", "--target-directory"}) {
+			return paths
+		}
+		if len(paths) > 1 {
+			return paths[:len(paths)-1] // the last one is where they go
+		}
+	case "chmod", "chown", "chgrp":
+		if recursive && len(paths) > 1 {
+			return paths[1:] // after the mode or owner
+		}
+	}
+	return nil
 }
 
 // isBareWord: an argument that names no directory (no "/", not ".", "..",
@@ -386,19 +458,25 @@ func (a *spAnalyzer) shell(cmd *shCmd, args []string, cwd string, depth int) {
 
 // skipEnv skips `env [-i] [-u NAME] [-C dir] [NAME=value]…`. `env -S
 // "cmd args"` splits a string into a command, so that string is analysed.
-func (a *spAnalyzer) skipEnv(words []string, i int, cwd string, depth int) int {
+func (a *spAnalyzer) skipEnv(words []string, i int, cwd *string, depth int) int {
 	for i < len(words) {
 		w := words[i]
 		switch {
-		case w == "-u" || w == "-C" || w == "--unset" || w == "--chdir":
+		case w == "-C" || w == "--chdir":
+			*cwd = a.chdirFlag(words[i:min(i+2, len(words))], *cwd, "-C")
+			i += 2
+		case strings.HasPrefix(w, "--chdir=") || (strings.HasPrefix(w, "-C") && len(w) > 2):
+			*cwd = a.chdirFlag(words[i:i+1], *cwd, "-C")
+			i++
+		case w == "-u" || w == "--unset":
 			i += 2
 		case w == "-S" || w == "--split-string":
 			if i+1 < len(words) {
-				a.analyze(words[i+1], cwd, depth+1)
+				a.analyze(words[i+1], *cwd, depth+1)
 			}
 			i += 2
 		case strings.HasPrefix(w, "-S") && len(w) > 2:
-			a.analyze(w[2:], cwd, depth+1)
+			a.analyze(w[2:], *cwd, depth+1)
 			i++
 		case strings.HasPrefix(w, "-") || isAssignment(w):
 			i++
@@ -509,17 +587,70 @@ func (a *spAnalyzer) protectedArg(arg, cwd string) (string, bool) {
 	} else if strings.HasPrefix(arg, "-") {
 		return "", false
 	}
+	a.pattern, a.unchecked = false, false
 	for _, c := range cands {
 		c = a.expandVars(c)
 		p := absPath(c, cwd, a.home)
 		if a.roots.has(foldPath(p)) {
 			return p, true
 		}
+		// The shell expands globs and brace lists before the command
+		// runs: `rm ~/.pilot*/policy.yaml` never names the directory.
+		if strings.ContainsAny(p, "*?[{") {
+			m, unchecked := a.roots.patternHit(p, a.dotGlobs())
+			if unchecked {
+				m = p
+			}
+			if m != "" {
+				a.pattern, a.unchecked = true, unchecked
+				return m, true
+			}
+		}
 	}
 	return "", false
 }
 
+// canName finishes the sentence about a pattern that hit: what it can
+// expand to, or that it is too wide to tell.
+func (a *spAnalyzer) canName(p string) string {
+	if a.unchecked {
+		return "a pattern too wide to check against the files Pilothouse protects"
+	}
+	return "which can name " + a.describe(p)
+}
+
+// dotGlobs: the line switches on matching dot files with * and ?.
+func (a *spAnalyzer) dotGlobs() bool {
+	l := strings.ToLower(a.raw)
+	return strings.Contains(l, "dotglob") || strings.Contains(l, "globdots") || strings.Contains(l, "glob_dots")
+}
+
+// declarers set shell variables from NAME=value arguments.
+var declarers = map[string]bool{"export": true, "local": true, "declare": true, "typeset": true, "readonly": true}
+
+const maxShellVars = 64
+
+// assign records the NAME=value words among words.
+func (a *spAnalyzer) assign(words []string) {
+	for _, w := range words {
+		if !isAssignment(w) || len(a.vars) >= maxShellVars {
+			continue
+		}
+		name, value, _ := strings.Cut(w, "=")
+		if a.vars == nil {
+			a.vars = map[string]string{}
+		}
+		a.vars[name] = a.expandVars(value)
+	}
+}
+
+// expandVars replaces $PILOTHOUSE_HOME and the variables assigned earlier
+// on the line ($NAME and ${NAME}). Other variables stay as written: their
+// values are only known when the command runs.
 func (a *spAnalyzer) expandVars(w string) string {
+	if !strings.ContainsRune(w, '$') {
+		return w
+	}
 	if a.pilothouseHome != "" {
 		for _, v := range []string{"${PILOTHOUSE_HOME}", "$PILOTHOUSE_HOME"} {
 			if w == v || strings.HasPrefix(w, v+"/") {
@@ -527,7 +658,60 @@ func (a *spAnalyzer) expandVars(w string) string {
 			}
 		}
 	}
-	return w
+	if len(a.vars) == 0 {
+		return w
+	}
+	var b strings.Builder
+	for i := 0; i < len(w); i++ {
+		if w[i] != '$' || i+1 >= len(w) {
+			b.WriteByte(w[i])
+			continue
+		}
+		j, braced := i+1, w[i+1] == '{'
+		if braced {
+			j++
+		}
+		k := j
+		for k < len(w) && (w[k] == '_' || isLetter(w[k]) || (k > j && w[k] >= '0' && w[k] <= '9')) {
+			k++
+		}
+		end := k
+		if braced {
+			if k >= len(w) || w[k] != '}' {
+				b.WriteByte(w[i])
+				continue
+			}
+			end = k + 1
+		}
+		v, ok := a.vars[w[j:k]]
+		if !ok || k == j {
+			b.WriteByte(w[i])
+			continue
+		}
+		b.WriteString(v)
+		i = end - 1
+	}
+	return b.String()
+}
+
+// chdirFlag returns the directory a wrapper's options move the command to
+// (`env -C dir`, `sudo -D dir`, `--chdir dir`, `--chdir=dir`), or cwd.
+func (a *spAnalyzer) chdirFlag(opts []string, cwd, short string) string {
+	for i, w := range opts {
+		var dir string
+		switch {
+		case (w == short || w == "--chdir") && i+1 < len(opts):
+			dir = opts[i+1]
+		case strings.HasPrefix(w, "--chdir="):
+			dir = w[len("--chdir="):]
+		case strings.HasPrefix(w, short) && len(w) > len(short):
+			dir = w[len(short):]
+		default:
+			continue
+		}
+		return absPath(a.expandVars(dir), cwd, a.home)
+	}
+	return cwd
 }
 
 // skipOptions returns the index of the first non-option word at or after
@@ -617,10 +801,19 @@ func resolveSymlinks(p string) (string, bool) {
 	if r, err := filepath.EvalSymlinks(p); err == nil {
 		return r, r != p
 	}
-	dir, file := filepath.Split(p)
-	if r, err := filepath.EvalSymlinks(filepath.Clean(dir)); err == nil {
-		out := filepath.Join(r, file)
-		return out, out != p
+	// A file that does not exist yet, perhaps in directories that do not
+	// exist yet either: resolve the nearest directory that does.
+	rest := ""
+	for dir := p; ; {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return p, false
+		}
+		rest = filepath.Join(filepath.Base(dir), rest)
+		dir = parent
+		if r, err := filepath.EvalSymlinks(dir); err == nil {
+			out := filepath.Join(r, rest)
+			return out, out != p
+		}
 	}
-	return p, false
 }

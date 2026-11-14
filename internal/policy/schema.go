@@ -324,16 +324,22 @@ func (p *parser) match(n *yaml.Node, label string) ([]fieldMatch, map[string][]s
 					continue
 				}
 			case fPath, fCwd, fRepo:
-				mode, pat = globPath, pathPattern(pat, p.home)
+				mode = globPath
 			case fBranch:
 				mode = globPath
 			}
-			g, err := compileGlob(pat, mode)
-			if err != nil {
-				p.errf(s, "%s: match.%s: %v", label, k, err)
-				continue
+			pats := []string{pat}
+			if f == fPath || f == fCwd || f == fRepo {
+				pats = pathPatterns(pat, p.home)
 			}
-			fm.globs = append(fm.globs, g)
+			for _, pat := range pats {
+				g, err := compileGlob(pat, mode)
+				if err != nil {
+					p.errf(s, "%s: match.%s: %v", label, k, err)
+					break
+				}
+				fm.globs = append(fm.globs, g)
+			}
 		}
 		if len(fm.globs) > 0 {
 			out = append(out, fm)

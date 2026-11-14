@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/sabr-software/pilothouse/internal/termsafe"
 	"github.com/sabr-software/pilothouse/internal/version"
 )
 
@@ -82,6 +83,7 @@ func Main(args []string) int {
 	if errors.As(err, &ee) {
 		return ee.Code
 	}
-	fmt.Fprintln(os.Stderr, "pilothouse:", err)
+	// The message may quote the daemon, which quotes agents (see safe.go).
+	fmt.Fprintln(os.Stderr, "pilothouse:", termsafe.Text(err.Error()))
 	return 1
 }

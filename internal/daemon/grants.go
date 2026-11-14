@@ -16,10 +16,20 @@ import (
 // A shell grant covers a command *key*: the program plus its subcommand
 // ("git push"), found after skipping the program's global flags and their
 // values, so `git -c user.name=x commit` grants "git commit" — never all of
-// git. When the subcommand can't be determined safely (an unknown flag that
-// might take a value, a path or quoted word where the subcommand should
-// be), the grant covers only that exact command. A bare program name is
-// granted only for a command that was just the program name.
+// git. A bare program name is granted only for a command that was just the
+// program name.
+//
+// The key is a convenience, so whenever it would cover more than the person
+// was shown, the grant is the exact command instead (sessionKey, widens):
+//   - a program not listed here: its second word may be an argument
+//     (`rm build`, `ssh host`), not a subcommand;
+//   - a global option that changes what runs or where (`git -c
+//     core.pager=…`, `make -f …`, `docker -H …`, `git -C` out of the folder);
+//   - a risk label the key alone doesn't carry (`git push --force`);
+//   - an argument naming a path outside the session's folder.
+//
+// The same test runs on the later command, so `git push` keeps covering
+// `git push origin main` and never covers `git push --force`.
 
 // globalFlags describes a program's options that may come before its
 // subcommand: flags that take a separate value, and flags that don't.
@@ -27,7 +37,26 @@ import (
 type globalFlags struct {
 	value   map[string]bool
 	boolean map[string]bool
+	// safe are the value options that can't change what runs or where it
+	// runs (a log level, a workspace name). Directory options (dirFlags)
+	// are judged by their value; any other value option makes a command
+	// exact for session grants.
+	safe map[string]bool
+	// anywhere: the program also accepts its global options after the
+	// subcommand (`npm install --registry …`, `make test -f …`).
+	anywhere bool
 }
+
+// dirFlags name the directory a program works in. Inside the session's
+// folder they don't change what a grant covers.
+var dirFlags = flagSet("-C", "--git-dir", "--work-tree", "--prefix", "--cwd", "--dir", "--directory", "-chdir", "--project")
+
+// gitSafeConfig are `git -c` settings that can't run a program or move
+// where git reads and writes.
+var gitSafeConfig = flagSet("user.name", "user.email", "core.quotepath", "commit.gpgsign", "tag.gpgsign",
+	"init.defaultbranch", "core.autocrlf", "core.filemode", "core.ignorecase", "diff.renames", "pull.rebase",
+	"pull.ff", "merge.ff", "push.default", "push.autosetupremote", "rebase.autostash", "fetch.prune",
+	"log.date", "log.decorate", "status.short", "status.branch")
 
 func flagSet(words ...string) map[string]bool {
 	m := make(map[string]bool, len(words))
@@ -55,43 +84,88 @@ var subcommandTools = map[string]globalFlags{
 			"--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs", "--no-optional-locks", "--no-advice"),
 	},
 	"npm": {
-		value:   flagSet("--prefix", "-C", "--userconfig", "--registry", "--cache", "--loglevel", "-w", "--workspace"),
-		boolean: flagSet("-g", "--global", "-s", "--silent", "-q", "--quiet", "-d", "--verbose", "-y", "--yes", "--workspaces", "-ws"),
+		value:    flagSet("--prefix", "-C", "--userconfig", "--registry", "--cache", "--loglevel", "-w", "--workspace"),
+		boolean:  flagSet("-g", "--global", "-s", "--silent", "-q", "--quiet", "-d", "--verbose", "-y", "--yes", "--workspaces", "-ws"),
+		safe:     flagSet("--loglevel", "-w", "--workspace"),
+		anywhere: true,
 	},
 	"pnpm": {
-		value:   flagSet("-C", "--dir", "--filter", "-F", "--loglevel"),
-		boolean: flagSet("-r", "--recursive", "-w", "--workspace-root", "-s", "--silent", "-g", "--global"),
+		value:    flagSet("-C", "--dir", "--filter", "-F", "--loglevel"),
+		boolean:  flagSet("-r", "--recursive", "-w", "--workspace-root", "-s", "--silent", "-g", "--global"),
+		safe:     flagSet("--filter", "-F", "--loglevel"),
+		anywhere: true,
 	},
 	"yarn": {
-		value:   flagSet("--cwd"),
-		boolean: flagSet("-s", "--silent", "--verbose"),
+		value:    flagSet("--cwd"),
+		boolean:  flagSet("-s", "--silent", "--verbose"),
+		anywhere: true,
 	},
-	"bun":   {boolean: flagSet("--silent")},
-	"cargo": {value: flagSet("--color", "--config", "-Z", "-C"), boolean: flagSet("-v", "-vv", "-q", "--quiet", "--verbose", "--offline", "--frozen", "--locked")},
-	"go":    {value: flagSet("-C")},
+	"bun": {boolean: flagSet("--silent")},
+	"cargo": {
+		value:    flagSet("--color", "--config", "-Z", "-C"),
+		boolean:  flagSet("-v", "-vv", "-q", "--quiet", "--verbose", "--offline", "--frozen", "--locked"),
+		safe:     flagSet("--color"),
+		anywhere: true,
+	},
+	"go": {value: flagSet("-C")},
 	"docker": {
 		value:   flagSet("-c", "--context", "-H", "--host", "--config", "-l", "--log-level", "--tlscacert", "--tlscert", "--tlskey"),
 		boolean: flagSet("-D", "--debug", "--tls", "--tlsverify"),
+		safe:    flagSet("-l", "--log-level"),
 	},
 	"kubectl": {
-		value:   flagSet("-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user", "-s", "--server", "--as", "-v"),
-		boolean: flagSet("--insecure-skip-tls-verify"),
+		value:    flagSet("-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user", "-s", "--server", "--as", "-v"),
+		boolean:  flagSet("--insecure-skip-tls-verify"),
+		safe:     flagSet("-n", "--namespace", "-v"),
+		anywhere: true,
 	},
-	"helm":      {value: flagSet("-n", "--namespace", "--kube-context", "--kubeconfig"), boolean: flagSet("--debug")},
+	"helm": {
+		value: flagSet("-n", "--namespace", "--kube-context", "--kubeconfig"), boolean: flagSet("--debug"),
+		safe: flagSet("-n", "--namespace"), anywhere: true,
+	},
 	"gh":        {value: flagSet("-R", "--repo")},
 	"terraform": {value: flagSet("-chdir")},
-	"aws":       {value: flagSet("--profile", "--region", "--output", "--endpoint-url"), boolean: flagSet("--debug", "--no-cli-pager", "--no-paginate")},
-	"gcloud":    {value: flagSet("--project", "--account", "--configuration"), boolean: flagSet("-q", "--quiet")},
+	"aws": {
+		value: flagSet("--profile", "--region", "--output", "--endpoint-url"), boolean: flagSet("--debug", "--no-cli-pager", "--no-paginate"),
+		safe: flagSet("--output"), anywhere: true,
+	},
+	"gcloud": {
+		value: flagSet("--project", "--account", "--configuration"), boolean: flagSet("-q", "--quiet"),
+		anywhere: true,
+	},
 	"brew":      {boolean: flagSet("-v", "--verbose", "-d", "--debug")},
 	"pip":       {boolean: flagSet("-q", "--quiet", "-v", "--verbose")},
 	"pip3":      {boolean: flagSet("-q", "--quiet", "-v", "--verbose")},
 	"uv":        {value: flagSet("--directory", "--project"), boolean: flagSet("-q", "--quiet", "-v", "--verbose", "--offline")},
 	"poetry":    {value: flagSet("-C", "--directory"), boolean: flagSet("-q", "--quiet", "-v", "--verbose", "-n", "--no-interaction")},
 	"systemctl": {boolean: flagSet("--user", "--system", "-q", "--quiet", "--no-pager")},
-	"make":      {value: flagSet("-C", "--directory", "-f", "--file", "--makefile", "-I", "-o", "-W"), boolean: flagSet("-s", "--silent", "-k", "-B", "-n", "--dry-run")},
-	"npx":       {value: flagSet("-p", "--package"), boolean: flagSet("-y", "--yes", "--no", "-q", "--quiet")},
-	"deno":      {boolean: flagSet("-q", "--quiet")},
+	"make": {
+		value:    flagSet("-C", "--directory", "-f", "--file", "--makefile", "-I", "-o", "-W"),
+		boolean:  flagSet("-s", "--silent", "-k", "-B", "-n", "--dry-run"),
+		anywhere: true,
+	},
+	"npx":  {value: flagSet("-p", "--package"), boolean: flagSet("-y", "--yes", "--no", "-q", "--quiet")},
+	"deno": {boolean: flagSet("-q", "--quiet")},
 }
+
+// More programs whose second word is a subcommand, task or target. They
+// have no global options listed, so any option before the subcommand makes
+// the command exact.
+func init() {
+	for _, name := range []string{"bundle", "rails", "rake", "mix", "dotnet", "gradle", "gradlew", "mvn", "mvnw",
+		"swift", "zig", "composer", "just", "task", "turbo", "nx", "flutter", "dart", "playwright", "vitest",
+		"ruff", "hatch", "pdm", "rye", "pipx", "conda", "mamba", "bazel", "buck2", "nix", "podman", "lerna",
+		"rush", "vercel", "wrangler", "supabase", "fly", "flyctl", "heroku", "pulumi", "goreleaser", "astro",
+		"next", "vite"} {
+		if _, ok := subcommandTools[name]; !ok {
+			sessionOnlyTools[name] = true
+		}
+	}
+}
+
+// sessionOnlyTools are keyed by subcommand for session grants only; rule
+// suggestions (commandKey) keep treating them as unknown programs.
+var sessionOnlyTools = map[string]bool{}
 
 // commandKey is the grant key of a shell command: "prog sub" when the
 // subcommand can be found, "prog" for a command that is only a program
@@ -144,18 +218,227 @@ func commandKey(words []string) (string, bool) {
 	return "", false // only flags: no subcommand
 }
 
-// grantPrefix is what an "allow for this session" covers: for shell tools
-// the command key, or the exact command when it has none; other tools: the
-// whole tool ("").
-func grantPrefix(req api.Request) string {
+// sessionKey is the key a session grant may use for argv: "prog sub" for a
+// listed program whose options before the subcommand (and after it, where
+// the program reads them there) can't change what runs or where; the
+// program alone for wholeProgramTools and one-word commands. ok is false
+// for everything else, which is granted as the exact command.
+func sessionKey(argv []string, cwd, root string) (string, bool) {
+	if len(argv) == 0 {
+		return "", false
+	}
+	prog := argv[0]
+	base := filepath.Base(prog)
+	if len(argv) == 1 {
+		return prog, !isFlagOrPath(prog)
+	}
+	if wholeProgramTools[base] && !isFlagOrPath(prog) {
+		if base == "tree" && slices.ContainsFunc(argv[1:], func(a string) bool { return strings.HasPrefix(a, "-o") || strings.HasPrefix(a, "--output") }) {
+			return "", false // tree -o writes a file
+		}
+		return prog, true
+	}
+	flags, known := subcommandTools[base]
+	if !known && !sessionOnlyTools[base] {
+		return "", false
+	}
+	key := ""
+	for i := 1; i < len(argv); i++ {
+		w := argv[i]
+		switch {
+		case w == "--":
+			if key == "" {
+				return "", false
+			}
+			return key, true // the rest belongs to what the subcommand runs
+		case key == "" && strings.HasPrefix(w, "+") && base == "cargo":
+			continue // toolchain selector: cargo +nightly build
+		case strings.HasPrefix(w, "-"):
+			name, val, inline := strings.Cut(w, "=")
+			switch {
+			case flags.value[name]:
+				if !inline {
+					if i+1 >= len(argv) {
+						return "", false
+					}
+					i++
+					val = argv[i]
+				}
+				if !safeGlobalValue(base, name, val, flags, cwd, root) {
+					return "", false
+				}
+			case key != "":
+				// An option of the subcommand: widens judges it.
+			case flags.boolean[name] && !inline:
+			default:
+				// Unknown before the subcommand: it may take a value, or
+				// change what runs (git --exec-path=…).
+				return "", false
+			}
+		case key != "":
+		case isFlagOrPath(w):
+			return "", false
+		default:
+			key = prog + " " + w
+			if !flags.anywhere {
+				return key, true
+			}
+		}
+	}
+	return key, key != ""
+}
+
+// safeGlobalValue reports that a global option's value keeps a command
+// inside what its key describes.
+func safeGlobalValue(base, name, val string, flags globalFlags, cwd, root string) bool {
+	switch {
+	case base == "git" && name == "-c":
+		k, v, _ := strings.Cut(val, "=")
+		k = strings.ToLower(k)
+		if k == "core.pager" {
+			return v == "" || v == "cat"
+		}
+		return gitSafeConfig[k] || strings.HasPrefix(k, "color.") || strings.HasPrefix(k, "advice.")
+	case dirFlags[name]:
+		return !outsideFolder(val, false, cwd, root)
+	}
+	return flags.safe[name]
+}
+
+// outsideFolder reports that a word, read as a path, may leave the
+// session's folder. With no folder known, only relative paths that don't
+// climb count as inside.
+func outsideFolder(p string, glob bool, cwd, root string) bool {
+	if p == "" || p == "/dev/null" {
+		return false
+	}
+	if strings.HasPrefix(p, "~") || (glob && expandsElsewhere(p)) {
+		return true
+	}
+	if root != "" && cwd != "" {
+		return !insideRoot(p, cwd, root)
+	}
+	return filepath.IsAbs(p) || slices.Contains(strings.Split(p, "/"), "..")
+}
+
+// expandsElsewhere reports that the shell may expand an unquoted word into
+// names that aren't written in it: brace lists (`{/etc/passwd,a}`), and
+// globs in a name starting with a dot, which can match `..`.
+func expandsElsewhere(p string) bool {
+	if strings.Contains(p, "{") {
+		return true
+	}
+	for _, part := range strings.Split(p, "/") {
+		if strings.HasPrefix(part, ".") && strings.ContainsAny(part, "*?[") {
+			return true
+		}
+	}
+	return false
+}
+
+// widens reports that argv does more than its key says: it carries a
+// blocking risk label the key alone doesn't, or names a path outside the
+// session's folder.
+func widens(argv []string, globs []bool, key, cwd, root string) bool {
+	keyLabels := map[string]bool{}
+	for _, l := range risk.Classify(risk.Call{Kind: api.ToolShell, Command: key, Cwd: cwd, Repo: root}) {
+		keyLabels[l.Code] = true
+	}
+	for _, l := range risk.Classify(risk.Call{Kind: api.ToolShell, Command: shellJoin(argv, globs), Cwd: cwd, Repo: root}) {
+		if grantBlockers[l.Code] && !keyLabels[l.Code] {
+			return true
+		}
+	}
+	if wholeProgramTools[filepath.Base(argv[0])] {
+		return false // metadata only; writes outside carry outside_repo above
+	}
+	for i, a := range argv[1:] {
+		glob := i+1 < len(globs) && globs[i+1]
+		_, v, has := strings.Cut(a, "=")
+		switch {
+		case has:
+			a = v // --output=FILE, CC=/tmp/x
+		case strings.HasPrefix(a, "-"):
+			if strings.ContainsAny(a, "/~") {
+				return true // a value written onto its option: -f/tmp/x
+			}
+			continue
+		}
+		if outsideFolder(a, glob, cwd, root) {
+			return true
+		}
+	}
+	return false
+}
+
+// shellJoin writes argv back as a command line that reads the same way:
+// a word with spaces or shell characters is single-quoted, unless the shell
+// was meant to expand it (globs). `rm 'my file'` and `rm my file` stay two
+// different commands.
+func shellJoin(argv []string, globs []bool) string {
+	out := make([]string, len(argv))
+	for i, a := range argv {
+		special := " \t\n'\"\\$`;&|<>()#!"
+		if i >= len(globs) || !globs[i] {
+			special += "*?[]{}~"
+		}
+		if a == "" || strings.ContainsAny(a, special) {
+			a = "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+		}
+		out[i] = a
+	}
+	return strings.Join(out, " ")
+}
+
+// stepKey is the grant one simple command needs: its key, or the exact
+// command when a key would cover more than the command shows.
+func stepKey(argv []string, globs []bool, vars bool, cwd, root string) string {
+	exact := shellJoin(argv, globs)
+	if vars {
+		return exact // a $VALUE is only known when it runs
+	}
+	key, ok := sessionKey(argv, cwd, root)
+	if !ok || widens(argv, globs, key, cwd, root) {
+		return exact
+	}
+	return key
+}
+
+// plainCommand reads a line that is one simple command with no redirection
+// or substitution, after plain wrappers such as timeout. ok is false for
+// everything else, including sudo, env and NAME=value prefixes.
+func plainCommand(command string) (argv []string, globs []bool, vars, ok bool) {
+	line := policy.ParseShell(command)
+	if len(line.Commands) != 1 || len(line.Subs) > 0 || len(line.Commands[0].Redirects) > 0 {
+		return nil, nil, false, false
+	}
+	c := line.Commands[0]
+	argv, seen := policy.UnwrapCommand(c.Words)
+	if len(argv) == 0 || !plainPrefix(c.Words, argv, seen) {
+		return nil, nil, false, false
+	}
+	return argv, argvGlobs(c, argv), c.Vars, true
+}
+
+// argvGlobs are c.Globs for argv, the words left after the wrappers.
+func argvGlobs(c policy.ShellCommand, argv []string) []bool {
+	if n := len(c.Words) - len(argv); n >= 0 && len(c.Globs) == len(c.Words) {
+		return c.Globs[n:]
+	}
+	return nil
+}
+
+// grantPrefix is what an "allow for this session" covers for a line
+// grantSteps finds no part in: for shell tools the command key, or the
+// exact command when it has none; other tools: the whole tool ("").
+func grantPrefix(req api.Request, root string) string {
 	if req.ToolKind != api.ToolShell {
 		return ""
 	}
-	words := strings.Fields(req.Command)
-	if key, ok := commandKey(words); ok {
-		return key
+	if argv, globs, vars, ok := plainCommand(req.Command); ok && !strings.ContainsAny(req.Command, shellControl) {
+		return stepKey(argv, globs, vars, req.Cwd, root)
 	}
-	return strings.Join(words, " ")
+	return strings.Join(strings.Fields(req.Command), " ")
 }
 
 func isFlagOrPath(w string) bool {
@@ -176,7 +459,7 @@ func matchGrant(grants []api.Grant, tool string, kind api.ToolKind, command stri
 // matches when its command key equals the grant, or it is exactly the
 // granted command, or (grantSteps) every part of a chained line is covered.
 func matchGrantAt(grants []api.Grant, tool string, kind api.ToolKind, command, cwd, root string) (api.Grant, bool) {
-	if g, ok := matchWhole(grants, tool, kind, command); ok {
+	if g, ok := matchWhole(grants, tool, kind, command, cwd, root); ok {
 		return g, true
 	}
 	if kind != api.ToolShell {
@@ -186,13 +469,16 @@ func matchGrantAt(grants []api.Grant, tool string, kind api.ToolKind, command, c
 }
 
 // matchWhole matches a call as one unit: a plain command, never a chain.
-func matchWhole(grants []api.Grant, tool string, kind api.ToolKind, command string) (api.Grant, bool) {
-	var words []string
-	var key string
-	var keyed bool
-	if kind == api.ToolShell {
-		words = strings.Fields(command)
-		key, keyed = commandKey(words)
+// It matches by key only when the command doesn't widen it (stepKey), so a
+// "git push" grant never covers `git push --force`.
+func matchWhole(grants []api.Grant, tool string, kind api.ToolKind, command, cwd, root string) (api.Grant, bool) {
+	var exact, key string
+	plain := kind == api.ToolShell && !strings.ContainsAny(command, shellControl)
+	if plain {
+		exact = strings.Join(strings.Fields(command), " ")
+		if argv, globs, vars, ok := plainCommand(command); ok {
+			key = stepKey(argv, globs, vars, cwd, root)
+		}
 	}
 	for _, g := range grants {
 		if g.Tool != tool {
@@ -204,11 +490,11 @@ func matchWhole(grants []api.Grant, tool string, kind api.ToolKind, command stri
 			}
 			continue // a shell grant always has a prefix; an empty one is malformed
 		}
-		if strings.ContainsAny(command, shellControl) {
+		if !plain {
 			continue
 		}
 		prefix := strings.Join(strings.Fields(g.Prefix), " ")
-		if (keyed && key == prefix) || strings.Join(words, " ") == prefix {
+		if key == prefix || exact == prefix {
 			return g, true
 		}
 	}
@@ -286,26 +572,23 @@ func grantSteps(command, cwd, root string) (steps []grantStep, ok bool) {
 			ok = false
 			continue
 		}
+		globs := argvGlobs(c, argv)
 		switch {
 		case prog == "cd":
-			if len(argv) != 2 || c.Vars || !insideRoot(argv[1], cwd, root) {
+			if len(argv) != 2 || c.Vars || len(globs) != 2 || globs[1] || !insideRoot(argv[1], cwd, root) {
 				ok = false
 				continue
 			}
 			cwd = resolveIn(argv[1], cwd)
 		case neutralTools[prog]:
-		case readTools[prog] && !c.Vars && readerSafe(prog, argv[1:]) && allInside(argv[1:], cwd, root):
+		case readTools[prog] && !c.Vars && readerSafe(prog, argv[1:]) && allInside(argv[1:], globs, cwd, root):
 			// At the end of a pipe (`| head -20`) it only shapes output.
 			if !c.PipedIn {
 				steps = append(steps, grantStep{key: readGrant, reader: true})
 			}
-		case prog == "ls" && allInside(argv[1:], cwd, root):
+		case prog == "ls" && !c.Vars && allInside(argv[1:], globs, cwd, root):
 		default:
-			key, keyed := commandKey(argv)
-			if !keyed {
-				key = strings.Join(argv, " ")
-			}
-			steps = append(steps, grantStep{key: key})
+			steps = append(steps, grantStep{key: stepKey(argv, globs, c.Vars, cwd, root)})
 		}
 	}
 	return steps, ok
@@ -334,7 +617,7 @@ func plainRedirects(rs []policy.ShellRedirect, cwd, root string) bool {
 		switch r.Op {
 		case "<<", "<<-", "<<<":
 		case "<":
-			if !insideRoot(r.Target, cwd, root) {
+			if (r.Glob && expandsElsewhere(r.Target)) || !insideRoot(r.Target, cwd, root) {
 				return false
 			}
 		case ">&", "<&":
@@ -351,7 +634,8 @@ func plainRedirects(rs []policy.ShellRedirect, cwd, root string) bool {
 }
 
 // readerSafe refuses the options that make a file reader write or run
-// something.
+// something. sed and sort name the options they may take; the rest name the
+// ones they may not.
 func readerSafe(prog string, args []string) bool {
 	var pos []string
 	for _, a := range args {
@@ -361,7 +645,9 @@ func readerSafe(prog string, args []string) bool {
 	}
 	switch prog {
 	case "sed":
-		return slices.Contains(args, "-n") && len(pos) > 0 && sedPrint.MatchString(pos[0])
+		return sedPrintsOnly(args)
+	case "sort":
+		return sortReadsOnly(args)
 	case "find":
 		for _, a := range args {
 			switch a {
@@ -369,36 +655,123 @@ func readerSafe(prog string, args []string) bool {
 				return false
 			}
 		}
-	case "sort":
-		for _, a := range args {
-			if strings.HasPrefix(a, "-o") || strings.HasPrefix(a, "--output") || strings.HasPrefix(a, "--compress-program") {
-				return false
-			}
-		}
+	case "grep", "egrep", "fgrep":
+		return !attachedFile(args, "ABCDdem")
 	case "rg":
 		for _, a := range args {
-			if strings.HasPrefix(a, "--pre") {
+			if strings.HasPrefix(a, "--pre") || strings.HasPrefix(a, "--hostname-bin") {
 				return false
 			}
 		}
+		return !attachedFile(args, "ABCEMTdegjmrt")
 	case "uniq":
 		return len(pos) <= 1 // a second name is its output file
 	}
 	return true
 }
 
-// allInside checks every word that could be a path. A search pattern that
-// looks like one outside the folder only costs a question.
-func allInside(args []string, cwd, root string) bool {
+// sedPrintsOnly allows `sed -n` with print scripts and nothing else: -i
+// edits in place, -f reads a script from a file, and a script can write
+// (w) or run (e) things.
+func sedPrintsOnly(args []string) bool {
+	quiet, script := false, false
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-e" || a == "--expression":
+			i++
+			if i >= len(args) || !sedPrint.MatchString(args[i]) {
+				return false
+			}
+			script = true
+		case a == "--quiet" || a == "--silent":
+			quiet = true
+		case a == "--regexp-extended" || a == "--posix" || a == "--unbuffered":
+		case strings.HasPrefix(a, "--"):
+			return false
+		case strings.HasPrefix(a, "-") && a != "-":
+			if strings.Trim(a[1:], "nErsuz") != "" {
+				return false
+			}
+			quiet = quiet || strings.Contains(a, "n")
+		case !script:
+			if !sedPrint.MatchString(a) {
+				return false
+			}
+			script = true
+		}
+	}
+	return quiet && script
+}
+
+var sortLongFlags = flagSet("--reverse", "--numeric-sort", "--unique", "--ignore-case", "--human-numeric-sort",
+	"--version-sort", "--general-numeric-sort", "--month-sort", "--random-sort", "--stable", "--check",
+	"--ignore-leading-blanks", "--dictionary-order", "--ignore-nonprinting", "--zero-terminated", "--merge",
+	"--key", "--field-separator", "--sort")
+
+// sortReadsOnly allows sort's ordering options. -o, --output (and its
+// abbreviations) write a file, -T picks where temporary files go and
+// --compress-program runs one; an option not listed here asks.
+func sortReadsOnly(args []string) bool {
 	for _, a := range args {
-		if strings.HasPrefix(a, "-") {
+		switch {
+		case a == "-" || !strings.HasPrefix(a, "-"):
+		case strings.HasPrefix(a, "--"):
+			name, _, _ := strings.Cut(a, "=")
+			if !sortLongFlags[name] {
+				return false
+			}
+		default:
+			for _, ch := range a[1:] {
+				if strings.ContainsRune("ktS", ch) {
+					break // the rest of the word is its value
+				}
+				if !strings.ContainsRune("bdfghiMnRrsuVzcCm", ch) {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+// attachedFile reports a pattern file written onto its option (-f.env,
+// -rf/etc/passwd): allInside can't see where the name starts. valued are the
+// other short options that take a value, which ends the cluster.
+func attachedFile(args []string, valued string) bool {
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") || strings.HasPrefix(a, "--") {
+			continue
+		}
+		for i, ch := range a[1:] {
+			if ch == 'f' && i+2 < len(a) {
+				return true
+			}
+			if ch == 'f' || strings.ContainsRune(valued, ch) {
+				break
+			}
+		}
+	}
+	return false
+}
+
+// allInside checks every word that could be a path. A search pattern that
+// looks like one outside the folder only costs a question. globs is
+// parallel to the command's words: globs[i+1] belongs to args[i].
+func allInside(args []string, globs []bool, cwd, root string) bool {
+	for i, a := range args {
+		glob := i+1 < len(globs) && globs[i+1]
+		if strings.HasPrefix(a, "-") && a != "-" {
 			_, v, has := strings.Cut(a, "=")
 			if !has {
+				if strings.ContainsAny(a, "/~") {
+					return false // a value written onto its option: -f/etc/passwd
+				}
 				continue
 			}
 			a = v
 		}
-		if !insideRoot(a, cwd, root) {
+		if (glob && expandsElsewhere(a)) || !insideRoot(a, cwd, root) {
 			return false
 		}
 	}
@@ -462,7 +835,7 @@ func grantKeys(req api.Request, root string) []string {
 		}
 	}
 	if len(keys) == 0 {
-		return []string{grantPrefix(req)}
+		return []string{grantPrefix(req, root)}
 	}
 	return keys
 }

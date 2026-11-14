@@ -89,6 +89,7 @@ func ReadOpenCode(dbPath, sessionID, cwd, cursor string, limit int, now time.Tim
 		return Result{}, err
 	}
 	items := make([]api.ActivityItem, 0, len(rows))
+	full := map[string]checkInput{} // shell commands and their output, by item ID
 	for _, r := range rows {
 		var p ocPart
 		if json.Unmarshal([]byte(r.data), &p) != nil {
@@ -110,7 +111,11 @@ func ReadOpenCode(dbPath, sessionID, cwd, cursor string, limit int, now time.Tim
 				Text: capHead(text, maxText), Source: source,
 			})
 		case "tool":
-			items = append(items, openCodeTool(r.id, at, turns[r.messageID], cwd, p))
+			it, in := openCodeTool(r.id, at, turns[r.messageID], cwd, p)
+			if in.command != "" {
+				full[it.ID] = in
+			}
+			items = append(items, it)
 		case "compaction":
 			items = append(items, api.ActivityItem{
 				ID: "oc-" + r.id, Kind: api.ActivitySystem, At: at, Turn: turns[r.messageID],
@@ -130,7 +135,7 @@ func ReadOpenCode(dbPath, sessionID, cwd, cursor string, limit int, now time.Tim
 	}
 	res := Result{Items: items, Cursor: next, Usage: usage}
 	if cursor == "" { // a cursor read has only the newest parts: too few for a receipt
-		res.Receipt = ReceiptOf(items, nil)
+		res.Receipt = receiptOf(items, nil, full)
 	}
 	return res, nil
 }
@@ -387,8 +392,11 @@ func ocPath(cwd, path, title, fallback string) string {
 	return hookkit.RelPath(cwd, path)
 }
 
-func openCodeTool(partID string, at time.Time, turn int, cwd string, p ocPart) api.ActivityItem {
-	it := api.ActivityItem{
+// openCodeTool is a tool part as a feed item. For a shell command it also
+// returns what a check is judged on: the item only has room for the
+// command's first line and the output's tail.
+func openCodeTool(partID string, at time.Time, turn int, cwd string, p ocPart) (it api.ActivityItem, check checkInput) {
+	it = api.ActivityItem{
 		ID: "oc-" + partID, Kind: api.ActivityTool, At: at, Turn: turn,
 		ToolKind: api.ToolOther,
 	}
@@ -414,6 +422,7 @@ func openCodeTool(partID string, at time.Time, turn int, cwd string, p ocPart) a
 		} else {
 			it.Summary = "Run a command"
 		}
+		check.command = capHead(cmd, maxCommand)
 		it.Note = toolNote(field("description"))
 	case "read":
 		it.ToolKind = api.ToolRead
@@ -447,12 +456,13 @@ func openCodeTool(partID string, at time.Time, turn int, cwd string, p ocPart) a
 	status := strings.ToLower(p.State.Status)
 	if status == "" || status == "pending" || status == "running" || status == "in_progress" {
 		it.Pending = true
-		return it
+		return it, check
 	}
 	it.Result = capTail(strings.TrimSpace(p.State.Output), maxResult)
 	it.IsError = status == "error" || status == "failed" || (p.State.Metadata.Exit != nil && *p.State.Metadata.Exit != 0)
 	if it.ToolKind == api.ToolShell {
-		it.CheckStatus = stepCheck(strings.TrimSpace(strings.TrimPrefix(it.Summary, "Run:")), it.Result, it.IsError)
+		check.output = capTail(strings.TrimSpace(p.State.Output), maxCheckOutput)
+		it.CheckStatus = stepCheck(check.command, check.output, it.IsError)
 	}
-	return it
+	return it, check
 }

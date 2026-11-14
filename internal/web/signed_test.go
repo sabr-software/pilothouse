@@ -168,6 +168,9 @@ func TestCapabilitiesOptionalAndReplySigned(t *testing.T) {
 	e = newEnv(t, func(d *Deps) { rc.FakeCore = d.Core.(*webtest.FakeCore); d.Core = rc })
 	k, pub = genKey(t)
 	ck, devID := e.pair(pub)
+	for _, id := range []string{"s_one", "s_two", "s_codex"} {
+		e.fc.PutSession(api.Session{ID: id, Agent: api.AgentClaude, State: api.StateWorking})
+	}
 	w := e.do("POST", "/api/sessions/s_one/reply", e.signAction(k, ActionReply, "s_one", api.Reply{Text: "also add tests\n"}), reqOpt{cookie: ck})
 	if w.Code != 200 {
 		t.Fatalf("reply: %d %s", w.Code, w.Body)

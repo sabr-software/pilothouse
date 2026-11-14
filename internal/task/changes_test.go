@@ -182,3 +182,100 @@ func TestChangesBounded(t *testing.T) {
 		t.Errorf("total diff %d bytes", total)
 	}
 }
+
+// A file that becomes a symlink has two sections in git's patch (the file
+// deleted, the link created) for its one entry in --raw. Every later file
+// must still get its own diff, however its name is written in the patch
+// header and whatever prefixes the user's git config asks for.
+func TestChangesMatchesDiffsByPath(t *testing.T) {
+	testEnv(t)
+	repo := repoWithFiles(t)
+	names := []string{"b.txt", "my file.txt", "ta\tb.txt", `we"ird.txt`, `back\slash.txt`, "ünï.txt"}
+	writeFile(t, filepath.Join(repo, "a.txt"), "a regular file\n", 0o644)
+	for _, n := range names {
+		writeFile(t, filepath.Join(repo, n), "base\n", 0o644)
+	}
+	mustGit(t, repo, "add", "-A")
+	mustGit(t, repo, "commit", "-q", "-m", "more files")
+	m, _ := newManager(t)
+	m.Start = (&recStarter{}).start
+	ctx := context.Background()
+	tk, err := m.New(ctx, NewOptions{Prompt: "links", Agent: "true", Dir: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt := tk.Worktree
+	if err := os.Remove(filepath.Join(wt, "a.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/somewhere/else", filepath.Join(wt, "a.txt")); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range names {
+		writeFile(t, filepath.Join(wt, n), "base\nchange to "+n+"\n", 0o644)
+	}
+	mustGit(t, wt, "mv", "old.txt", "renamed.txt")
+	writeFile(t, filepath.Join(wt, "renamed.txt"), strings.Repeat("same content\n", 20)+"renamed and edited\n", 0o644)
+
+	check := func(t *testing.T) {
+		t.Helper()
+		d, err := Changes(ctx, tk)
+		if err != nil {
+			t.Fatal(err)
+		}
+		byPath := map[string]api.FilePreview{}
+		for _, f := range d.Files {
+			byPath[f.Path] = f
+		}
+		for _, n := range names {
+			f, ok := byPath[n]
+			if want := "@@ -1 +1,2 @@\n base\n+change to " + n + "\n"; !ok || f.Diff != want || f.Added != 1 || f.Removed != 0 {
+				t.Errorf("%q: +%d -%d, diff %q, want %q", n, f.Added, f.Removed, f.Diff, want)
+			}
+		}
+		if f := byPath["renamed.txt"]; f.Op != api.FileRename || !strings.Contains(f.Diff, "+renamed and edited") || strings.Contains(f.Diff, "change to") {
+			t.Errorf("renamed.txt: %+v", f)
+		}
+		// The type change shows both halves: the file going, the link coming.
+		a := byPath["a.txt"]
+		if !strings.Contains(a.Diff, "-a regular file") || !strings.Contains(a.Diff, "+/somewhere/else") || strings.Contains(a.Diff, "diff --git") || strings.Contains(a.Diff, "change to") {
+			t.Errorf("a.txt: %q", a.Diff)
+		}
+		if d.Truncated {
+			t.Errorf("truncated: %+v", d)
+		}
+	}
+	check(t)
+
+	// A user's diff.noprefix or diff.mnemonicPrefix changes git's headers.
+	for _, cfg := range []string{"diff.noprefix", "diff.mnemonicPrefix"} {
+		t.Run(cfg, func(t *testing.T) {
+			mustGit(t, repo, "config", cfg, "true")
+			defer mustGit(t, repo, "config", "--unset", cfg)
+			check(t)
+		})
+	}
+
+	// The same for a branch whose worktree is gone.
+	mustGit(t, wt, "add", "-A")
+	mustGit(t, wt, "commit", "-q", "-m", "all of it")
+	mustGit(t, repo, "worktree", "remove", "--force", wt)
+	check(t)
+}
+
+func TestGitQuote(t *testing.T) {
+	for in, want := range map[string]string{
+		"a/plain.txt":       "a/plain.txt",
+		"a/my file.txt":     "a/my file.txt",
+		"a/ünï.txt":         "a/ünï.txt",
+		"a/ta\tb.txt":       `"a/ta\tb.txt"`,
+		`a/we"ird.txt`:      `"a/we\"ird.txt"`,
+		`a/back\slash.txt`:  `"a/back\\slash.txt"`,
+		"a/new\nline.txt":   `"a/new\nline.txt"`,
+		"a/esc\x1bdel\x7f1": `"a/esc\033del\1771"`,
+	} {
+		if got := gitQuote(in); got != want {
+			t.Errorf("gitQuote(%q) = %s, want %s", in, got, want)
+		}
+	}
+}

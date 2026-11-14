@@ -137,6 +137,20 @@ export function watch(page, tag) {
 export const PHONE = { width: 390, height: 844, isMobile: true, hasTouch: true, deviceScaleFactor: 2 };
 export const DESKTOP = { width: 1440, height: 900, deviceScaleFactor: 1 };
 
+/**
+ * Sets the viewport and waits for the app to be back: Chrome reloads the
+ * page when isMobile or hasTouch changes, and the shell mounts a moment
+ * after the load.
+ */
+export async function setSize(page, vp) {
+  const before = page.viewport() || {};
+  const reloads = !!before.isMobile !== !!vp.isMobile || !!before.hasTouch !== !!vp.hasTouch;
+  const nav = reloads ? page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}) : null;
+  await page.setViewport(vp);
+  if (nav) await nav;
+  await page.waitForSelector('main .view', { timeout: 15000 }).catch(() => {});
+}
+
 export async function scheme(page, s) {
   await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: s }, { name: 'prefers-reduced-motion', value: 'reduce' }]);
 }

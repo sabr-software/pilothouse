@@ -350,6 +350,59 @@ func TestNewErrors(t *testing.T) {
 	}
 }
 
+// The base is read again later from the task's worktree (changes, ship),
+// where HEAD is the task's own branch and ORIG_HEAD does not exist: a base
+// like that is recorded as what it named when the task started.
+func TestNewPinsWorktreeLocalBase(t *testing.T) {
+	testEnv(t)
+	repo := newRepo(t)
+	ctx := context.Background()
+	first := mustGit(t, repo, "rev-parse", "HEAD")
+	mustGit(t, repo, "tag", "v1")
+	writeFile(t, filepath.Join(repo, "second.txt"), "second\n", 0o644)
+	mustGit(t, repo, "add", "second.txt")
+	mustGit(t, repo, "commit", "-q", "-m", "second")
+	second := mustGit(t, repo, "rev-parse", "HEAD")
+	mustGit(t, repo, "reset", "-q", "--hard", first) // ORIG_HEAD is now the second commit
+
+	work := func(t *testing.T, base, wantRef string) {
+		t.Helper()
+		m := &Manager{Start: (&recStarter{}).start, Out: io.Discard, Err: io.Discard, Daemon: nopDaemon{}}
+		tk, err := m.New(ctx, NewOptions{Prompt: "base " + base, Agent: "true", Dir: repo, Base: base})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tk.BaseRef != wantRef {
+			t.Errorf("--base %s recorded as %q, want %q", base, tk.BaseRef, wantRef)
+		}
+		writeFile(t, filepath.Join(tk.Worktree, "agent.txt"), "work\n", 0o644)
+		mustGit(t, tk.Worktree, "add", "agent.txt")
+		mustGit(t, tk.Worktree, "commit", "-q", "-m", "agent work")
+		mustGit(t, tk.Worktree, "reset", "-q", "--hard") // moves the worktree's ORIG_HEAD
+		d, err := Changes(ctx, tk)
+		if err != nil {
+			t.Fatalf("--base %s: %v", base, err)
+		}
+		if len(d.Files) != 1 || d.Files[0].Path != "agent.txt" || d.Added != 1 {
+			t.Errorf("--base %s: changes after a commit: %+v", base, d.Files)
+		}
+		tk.Status = api.TaskReview
+		if err := saveTask(tk); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.Close(ctx, tk.ID); err == nil || !strings.Contains(err.Error(), "1 commit(s) beyond") {
+			t.Errorf("--base %s: close with a commit: %v", base, err)
+		}
+	}
+	work(t, "HEAD", "main") // as with no --base: the current branch
+	work(t, "ORIG_HEAD", second)
+	work(t, "v1", "v1") // names every worktree shares stay as they are
+	work(t, "refs/heads/main", "refs/heads/main")
+	work(t, first[:10], first[:10])
+	mustGit(t, repo, "checkout", "-q", "--detach")
+	work(t, "HEAD", first)
+}
+
 func TestStartFailureRollsBack(t *testing.T) {
 	testEnv(t)
 	repo := newRepo(t)
@@ -490,6 +543,57 @@ func TestListWithoutDaemon(t *testing.T) {
 	}
 	if fi, _ := os.Stat(StorePath()); fi.Mode().Perm() != 0o600 {
 		t.Fatalf("store mode %v", fi.Mode())
+	}
+}
+
+// The task file replaces the old one by rename, which is only safe across
+// a power cut when the new file's content reached the disk first: without
+// that the name can end up on an empty file, and every task is forgotten.
+func TestStoreSyncsBeforeRename(t *testing.T) {
+	testEnv(t)
+	if err := saveTask(api.Task{ID: "t_first"}); err != nil {
+		t.Fatal(err)
+	}
+	var synced []string
+	real := syncFile
+	syncFile = func(f *os.File) error {
+		if f.Name() == StorePath()+".tmp" {
+			// At this point the new content is all in the temporary file
+			// and the old file is still the one in place.
+			tmp, _ := os.ReadFile(f.Name())
+			cur, _ := os.ReadFile(StorePath())
+			if !bytes.Contains(tmp, []byte("t_second")) || !bytes.HasSuffix(tmp, []byte("}\n")) || bytes.Contains(cur, []byte("t_second")) {
+				t.Errorf("synced too early or too late: tmp %q, in place %q", tmp, cur)
+			}
+		}
+		synced = append(synced, f.Name())
+		return real(f)
+	}
+	defer func() { syncFile = real }()
+	if err := saveTask(api.Task{ID: "t_second"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(synced) == 0 || synced[0] != StorePath()+".tmp" {
+		t.Fatalf("synced %q, want the temporary file first", synced)
+	}
+	if ts, err := loadTasks(); err != nil || len(ts) != 2 {
+		t.Fatalf("tasks %+v, %v", ts, err)
+	}
+	if fi, err := os.Stat(StorePath()); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("store mode %v, %v", fi, err)
+	}
+	if _, err := os.Stat(StorePath() + ".tmp"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("temporary file left behind: %v", err)
+	}
+
+	// A sync that fails leaves the old file alone.
+	syncFile = func(*os.File) error { return errors.New("disk on fire") }
+	if err := saveTask(api.Task{ID: "t_third"}); err == nil || !strings.Contains(err.Error(), "disk on fire") {
+		t.Fatalf("failed sync: %v", err)
+	}
+	syncFile = real
+	if ts, err := loadTasks(); err != nil || len(ts) != 2 {
+		t.Fatalf("after a failed sync: %+v, %v", ts, err)
 	}
 }
 

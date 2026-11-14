@@ -232,32 +232,38 @@ func TestTelegramThroughDaemon(t *testing.T) {
 	}
 	mock.mu.Unlock()
 
-	// Wait for the restarted (paired) bot before the request goes out.
+	// The bot that paired reports the chat at once; the daemon swaps in a
+	// new one on its next tick, which can land while the button below is
+	// being handled. That press must not be lost.
 	waitFor(t, "paired bot", func() bool { b := h.d.tg.current(); return b != nil && b.Chat() == 4242 })
 
-	// A held request: the Allow button answers the agent.
+	// A held request: the Deny button answers the agent. (Allowing is
+	// signed by a paired device, so Telegram offers no button for it.)
 	res := make(chan fakeOutcome, 1)
 	go func() { res <- h.hook(bg, t, permission("git push origin main", "")) }()
 	var msg tgSent
 	waitFor(t, "request message", func() bool { var ok bool; msg, ok = mock.find(false, "git push origin main"); return ok })
 	var kb telegram.InlineKeyboard
 	_ = json.Unmarshal(msg.Markup, &kb)
-	allow := ""
+	deny := ""
 	for _, row := range kb.Rows {
 		for _, b := range row {
-			if b.Text == "✅ Allow" {
-				allow = b.CallbackData
+			if b.Text == "❌ Deny" {
+				deny = b.CallbackData
+			}
+			if b.CallbackData != "" && strings.Contains(b.Text, "Allow") {
+				t.Fatalf("Telegram offers to allow: %s", msg.Markup)
 			}
 		}
 	}
-	if allow == "" {
-		t.Fatalf("no Allow button: %s", msg.Markup)
+	if deny == "" {
+		t.Fatalf("no Deny button: %s", msg.Markup)
 	}
-	mock.push(telegram.Update{CallbackQuery: &telegram.CallbackQuery{ID: "cb1", From: telegram.User{ID: 4242}, Data: allow,
+	mock.push(telegram.Update{CallbackQuery: &telegram.CallbackQuery{ID: "cb1", From: telegram.User{ID: 4242}, Data: deny,
 		Message: &telegram.Message{MessageID: msg.ID, Chat: telegram.Chat{ID: 4242, Type: "private"}}}})
 	select {
 	case out := <-res:
-		if out.Behavior != api.BehaviorAllow {
+		if out.Behavior != api.BehaviorDeny {
 			t.Fatalf("hook = %+v", out)
 		}
 	case <-time.After(5 * time.Second):
@@ -268,7 +274,7 @@ func TestTelegramThroughDaemon(t *testing.T) {
 	if len(decided) != 1 || decided[0].Decision.By != "telegram:4242" {
 		t.Fatalf("decided = %+v", decided)
 	}
-	waitFor(t, "edit", func() bool { _, ok := mock.find(true, "✓ Allowed from Telegram"); return ok })
+	waitFor(t, "edit", func() bool { _, ok := mock.find(true, "✗ Denied from Telegram"); return ok })
 
 	// Answered from the CLI: the Telegram message is edited (withdrawal).
 	go func() { res <- h.hook(bg, t, permission("npm publish", "")) }()

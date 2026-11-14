@@ -152,6 +152,7 @@ type Model struct {
 	explainErr    error
 	flash         flash
 	pending       map[string]bool
+	hold          selectionHold
 	// questions, plans, replies, activity (ask.go)
 	ask         askState
 	replyID     string
@@ -556,6 +557,57 @@ func (m *Model) pruneExited() {
 	}
 }
 
+// selectionHold is set when the selected item left on its own (answered
+// on another device, expired, exited) and the cursor now rests on a row
+// the person didn't choose. A key already on its way was meant for the
+// old row, so keys that act on the selection are ignored until the new
+// one has been drawn and has stayed on screen for selectionSettle.
+type selectionHold struct {
+	on    bool
+	shown time.Time // when the new selection was first drawn; zero: not yet
+}
+
+// selectionSettle is how long a selection the person didn't choose must
+// have been on screen before a key may act on it.
+const selectionSettle = time.Second
+
+// held reports whether a key that acts on the selected row must be
+// ignored. Every ignored key restarts the wait, so a held-down key or a
+// burst of them can't run past it.
+func (m *Model) held() bool {
+	if !m.hold.on {
+		return false
+	}
+	now := m.opts.Now()
+	if !m.hold.shown.IsZero() && now.Sub(m.hold.shown) >= selectionSettle {
+		m.hold = selectionHold{}
+		return false
+	}
+	if !m.hold.shown.IsZero() {
+		m.hold.shown = now
+	}
+	m.setFlash(flashWarn, "Ignored: the selection moved when the item you were on closed. Check the highlighted row, then press again")
+	return true
+}
+
+// actsOnSelection reports whether a list key does something to the
+// selected row (answer, open, attach, reply) rather than move or look.
+func actsOnSelection(key string) bool {
+	switch key {
+	case "y", "a", "n", "r", "enter":
+		return true
+	}
+	return len(key) == 1 && key[0] >= '1' && key[0] <= '9'
+}
+
+// rebuildOwn rebuilds after the person's own answer: they closed the
+// selected row themselves, so moving on to the next one is not held.
+func (m *Model) rebuildOwn() {
+	h := m.hold
+	m.rebuild()
+	m.hold = h
+}
+
 // rebuild recomputes the rows and keeps the selection on the same item.
 func (m *Model) rebuild() {
 	held := map[string]bool{} // sessions represented by a request row
@@ -628,7 +680,8 @@ func (m *Model) rebuild() {
 		m.counts[r.section]++
 	}
 	// Restore the selection by key; if the item left (answered, exited
-	// elsewhere), stay at the same position so the next item is selected.
+	// elsewhere), stay at the same position so the next item is selected,
+	// and hold it: see selectionHold.
 	found := false
 	for i, r := range rows {
 		if r.key == m.selKey {
@@ -639,10 +692,14 @@ func (m *Model) rebuild() {
 	if !found {
 		m.cursor = min(m.cursor, len(rows)-1)
 		m.cursor = max(m.cursor, 0)
+		lost := m.selKey != ""
 		if len(rows) > 0 {
 			m.selKey = rows[m.cursor].key
 		} else {
 			m.selKey = ""
+		}
+		if lost && m.selKey != "" {
+			m.hold = selectionHold{on: true}
 		}
 	}
 	m.clampScroll()
@@ -698,7 +755,8 @@ func (m *Model) selectedSession() *api.Session {
 }
 
 func (m *Model) setFlash(k flashKind, text string) {
-	m.flash = flash{text: text, kind: k, until: m.opts.Now().Add(6 * time.Second)}
+	// A flash quotes commands, answers and errors from the daemon.
+	m.flash = flash{text: oneLine(text), kind: k, until: m.opts.Now().Add(6 * time.Second)}
 }
 
 func (m *Model) move(delta int) tea.Cmd {
@@ -768,6 +826,9 @@ func (m *Model) onKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if actsOnSelection(k.String()) && m.held() {
+		return m, nil
+	}
 	switch k.String() {
 	case "q":
 		m.stopStream()
@@ -910,7 +971,7 @@ func (m *Model) onDecided(msg decideMsg) tea.Cmd {
 			delete(m.requests, msg.id)
 		}
 		m.setFlash(flashOK, text)
-		m.rebuild()
+		m.rebuildOwn()
 		return nil
 	}
 	if msg.err == nil {
@@ -930,7 +991,7 @@ func (m *Model) onDecided(msg decideMsg) tea.Cmd {
 		} else {
 			m.setFlash(flashOK, "✓ "+msg.label+what)
 		}
-		m.rebuild()
+		m.rebuildOwn()
 		return nil
 	}
 	switch {
@@ -983,7 +1044,7 @@ func describeErr(err error, action string) string {
 	case errors.Is(err, client.ErrDaemonDown):
 		return "The daemon isn't running: start it with `pilothouse start`"
 	}
-	return "Couldn't " + action + ": " + err.Error()
+	return "Couldn't " + action + ": " + oneLine(err.Error())
 }
 
 func (m *Model) cyclePresence() tea.Cmd {

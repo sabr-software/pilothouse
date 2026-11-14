@@ -25,6 +25,7 @@ import (
 	"github.com/sabr-software/pilothouse/internal/config"
 	"github.com/sabr-software/pilothouse/internal/daemon"
 	"github.com/sabr-software/pilothouse/internal/notify/telegram"
+	"github.com/sabr-software/pilothouse/internal/termsafe"
 	"github.com/sabr-software/pilothouse/internal/version"
 )
 
@@ -40,7 +41,7 @@ var (
 	tgPollInterval = 500 * time.Millisecond
 	// notifySelfCheck refuses to change where notifications and decisions
 	// go when run from inside an agent session: these commands write the
-	// bot token, the pairing code and the ntfy topic (whose Allow buttons
+	// bot token, the pairing code and the ntfy topic (whose Deny buttons
 	// are one-tap capability URLs) without going through the daemon's
 	// agent-caller guard.
 	notifySelfCheck = func() error { return daemon.CheckSelf(all.List()) }
@@ -66,10 +67,11 @@ func newNotifyTelegramCmd() *cobra.Command {
 		Use:   "telegram",
 		Short: "Answer requests from Telegram (buttons, replies; works without Tailscale)",
 		Long: `Connects a Telegram bot you create: requests that need you while you're away
-arrive with buttons (Allow / Allow for session / Deny, question options,
-plan Approve / Request changes), replying to a "finished" message sends that
-agent a follow-up, and messages are updated when a request is answered
-anywhere else.
+arrive with buttons (Deny, question options, plan Request changes),
+replying to a "finished" message sends that agent a follow-up, and messages
+are updated when a request is answered anywhere else. Allowing a tool call
+or approving a plan is signed by a paired device: with remote access on,
+"Allow in the app" opens the request there.
 
 You need a bot token from @BotFather (send it /newbot). The token is read
 from a prompt (or the first line of stdin), never from the command line,
@@ -202,14 +204,14 @@ func runNotifyTelegram(ctx context.Context, w io.Writer, in *bufio.Reader, o tgO
 	if err != nil {
 		return false, fmt.Errorf("save the token: %w", err)
 	}
-	fmt.Fprintf(w, "   ✓ @%s is ready (token saved to %s, mode 0600)\n\n", me.Username, path)
+	fmt.Fprintf(w, "   ✓ @%s is ready (token saved to %s, mode 0600)\n\n", termsafe.Line(me.Username), path)
 
 	link := telegram.StartLink(me.Username, code)
 	fmt.Fprintln(w, "3. On your phone, open this link (or scan it) and tap Start:")
 	if !o.noQR {
 		tgQR(w, link)
 	}
-	fmt.Fprintf(w, "   %s\n", link)
+	fmt.Fprintf(w, "   %s\n", termsafe.Line(link))
 	until := k.PairExpires.Local().Format("15:04")
 	if !cfg.TelegramDecisions() {
 		fmt.Fprintln(w, "   (notify only: Telegram won't be able to answer requests)")
@@ -228,7 +230,7 @@ func runNotifyTelegram(ctx context.Context, w io.Writer, in *bufio.Reader, o tgO
 		return false, nil
 	}
 	if daemonUp && h.Version != version.Version {
-		fmt.Fprintf(w, "   ! the running daemon is %s; if pairing doesn't finish, restart it with this binary (%s)\n", h.Version, version.Version)
+		fmt.Fprintf(w, "   ! the running daemon is %s; if pairing doesn't finish, restart it with this binary (%s)\n", termsafe.Line(h.Version), version.Version)
 	}
 	fmt.Fprintln(w, "\nWaiting for you to tap Start… (Ctrl-C to stop waiting)")
 	wctx, cancel := context.WithDeadline(ctx, k.PairExpires)
@@ -239,7 +241,7 @@ func runNotifyTelegram(ctx context.Context, w io.Writer, in *bufio.Reader, o tgO
 		// No daemon: pair here (only one program may read the bot's updates).
 		var ch telegram.Chat
 		if ch, err = telegram.WaitForStart(wctx, c, k, tgNow); err == nil {
-			err = tgSavePaired(ctx, c, ch, code)
+			err = tgSavePaired(ctx, w, c, ch, code)
 		}
 	}
 	switch {
@@ -277,8 +279,9 @@ func tgWaitForDaemon(ctx context.Context) (int64, error) {
 
 // tgSavePaired records a chat paired by the CLI (no daemon running): it
 // spends the code (only if it is still the pending one), then saves the
-// chat, like the daemon does.
-func tgSavePaired(ctx context.Context, c *telegram.Client, ch telegram.Chat, code string) error {
+// chat, like the daemon does. A welcome message that fails is reported
+// on w but doesn't undo the pairing, which is saved by then.
+func tgSavePaired(ctx context.Context, w io.Writer, c *telegram.Client, ch telegram.Chat, code string) error {
 	if err := telegram.SpendCode(telegram.KeysPath(), code, tgNow()); err != nil {
 		return err
 	}
@@ -292,9 +295,18 @@ func tgSavePaired(ctx context.Context, c *telegram.Client, ch telegram.Chat, cod
 	}
 	sctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	_, _ = c.Send(sctx, telegram.SendMessage{ChatID: ch.ID, Text: "✅ <b>Connected to " + config.MachineName(cfg) +
-		".</b>\nWhen you're away, requests that need you show up here. Send /status any time."})
+	// The text is HTML: an unescaped < or & in the name makes Telegram
+	// reject the whole message.
+	if _, err := c.Send(sctx, telegram.SendMessage{ChatID: ch.ID, Text: "✅ <b>Connected to " + tgEscape(config.MachineName(cfg)) +
+		".</b>\nWhen you're away, requests that need you show up here. Send /status any time."}); err != nil {
+		fmt.Fprintf(w, "! Paired, but the welcome message didn't go through (%s). Send /status to the bot to check it answers.\n", termsafe.Line(err.Error()))
+	}
 	return nil
+}
+
+// tgEscape escapes text for a Telegram HTML message.
+func tgEscape(s string) string {
+	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
 }
 
 func runTelegramOff(w io.Writer) error {
@@ -390,11 +402,13 @@ func newNotifyNtfyCmd() *cobra.Command {
 	var server string
 	cmd := &cobra.Command{
 		Use:   "ntfy [topic]",
-		Short: "Get notifications in the ntfy app (Allow/Deny buttons with remote access)",
+		Short: "Get notifications in the ntfy app (Open and Deny buttons with remote access)",
 		Long: `Sends notifications to an ntfy topic (https://ntfy.sh). Without a topic a
 random, unguessable one is made: anyone who knows a topic name on ntfy.sh
 can read it, so don't pick a simple one. With remote access on
-(` + "`pilothouse remote tailscale`" + `), request notifications get Allow / Deny buttons.
+(` + "`pilothouse remote tailscale`" + `), request notifications get an Open button,
+which opens the request in the web app where your paired phone allows it,
+and a one-tap Deny.
 Notifications are cleared from the phone once a request is answered
 (ntfy server 2.16 or newer).`,
 		Args: cobra.MaximumNArgs(1),
@@ -454,7 +468,7 @@ func runNotifyNtfy(w io.Writer, server, topic string, restartHint bool) (string,
 	tgQR(w, link)
 	fmt.Fprintf(w, "  %s\n", link)
 	if cfg.Web.PublicURL == "" {
-		fmt.Fprintln(w, "  Allow / Deny buttons need remote access: `pilothouse remote tailscale`.")
+		fmt.Fprintln(w, "  Open and Deny buttons need remote access: `pilothouse remote tailscale`.")
 	}
 	if restartHint {
 		fmt.Fprintln(w, "  The daemon reads this at start: `pilothouse service restart` (or `pilothouse stop && pilothouse start`), then `pilothouse notify test`.")

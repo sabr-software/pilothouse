@@ -37,6 +37,7 @@ type hookCall struct {
 	branch   string
 	agentPID int
 	shared   bool // the hook ran under a shared agent server (Codex app-server)
+	nested   bool // another agent started inside the wrapped session it names
 	mode     api.Mode
 	// answered are requests this hook showed were answered in the agent's
 	// own dialog; their waiters are released after the commit.
@@ -107,6 +108,9 @@ func (d *Daemon) routeHook(ctx context.Context, ad adapters.Adapter, env adapter
 		// The waiter is registered before the request is committed, so a
 		// decision that lands immediately after the commit can't be missed.
 		plan = d.planPermission(h, pol)
+		if d.opts.afterPlan != nil {
+			d.opts.afterPlan()
+		}
 	}
 
 	var outcome adapters.HookOutcome
@@ -118,6 +122,13 @@ func (d *Daemon) routeHook(ctx context.Context, ad adapters.Adapter, env adapter
 		}
 		before := s
 		applyHook(&s, h, tx.Now())
+		if before.ExitedAt != nil && s.ExitedAt == nil {
+			// Resumed. Grants are dropped when a session exits; this
+			// covers sessions that exited under an older version.
+			if err := tx.DeleteGrants(ctx, s.ID); err != nil {
+				return err
+			}
+		}
 		d.recordMessaging(ctx, tx, s.ID, h) // messaging.go: Claude's messaging endpoint, kept private
 		// A task may be registered before its session exists (`task new`
 		// calls PutTask first); link it as soon as either side shows up.
@@ -431,6 +442,13 @@ func (d *Daemon) holdPermission(ctx context.Context, p *permissionPlan, sess api
 		return adapters.HookOutcome{}
 	}
 	defer d.waiters.remove(req.ID)
+	// The route was chosen before the request was stored. If the person
+	// came back in between, the release pass found nothing to close, so
+	// the hook hands the request to the terminal itself.
+	if !p.mustHold && !d.cfg.Approvals.AlwaysHold && d.Presence().State != api.PresenceAway {
+		d.endHold(p, api.RequestSteppedAside, "person is back at the desk")
+		return adapters.HookOutcome{}
+	}
 	d.notifyHeld(req, sess)
 
 	timer := time.NewTimer(p.hold)
@@ -511,16 +529,24 @@ func (d *Daemon) scheduleBlockedNotice(req api.Request, sess api.Session) {
 // sessionForHook finds the hook's session or creates it: by Pilothouse id for
 // wrapped sessions, else by the agent's session id, else by agent PID.
 func (d *Daemon) sessionForHook(ctx context.Context, tx *store.Tx, h *hookCall) (api.Session, error) {
-	err := store.ErrNotFound
-	var s api.Session
-	switch id := h.env.PilothouseSessionID; {
-	case id != "" && validSessionID(id):
-		s, err = tx.Session(ctx, id)
-		if errors.Is(err, store.ErrNotFound) {
+	if id := h.env.PilothouseSessionID; id != "" && validSessionID(id) {
+		s, err := tx.Session(ctx, id)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
 			// The hook beat the holder's registration; the session is
 			// completed when the holder registers.
 			return d.createSession(ctx, tx, h, id)
+		case err != nil || !nestedAgent(s, h):
+			return s, err
 		}
+		// An agent the wrapped one started (Claude running `codex exec`)
+		// inherits PILOTHOUSE_SESSION_ID. It is another conversation: it
+		// gets a session of its own, outside the holder and the task.
+		h.nested, h.mode = true, api.ModeObserved
+	}
+	err := store.ErrNotFound
+	var s api.Session
+	switch {
 	case h.ev.AgentSessionID != "":
 		s, err = tx.SessionByAgentID(ctx, h.env.Agent, h.ev.AgentSessionID)
 	case h.agentPID > 0:
@@ -536,6 +562,27 @@ func (d *Daemon) sessionForHook(ctx context.Context, tx *store.Tx, h *hookCall) 
 		return s, err
 	}
 	return d.createSession(ctx, tx, h, newID("s_"))
+}
+
+// nestedAgent reports whether the hook comes from a different agent than
+// the wrapped session s it names: the session is of another kind and the
+// hook's own agent process is in its process chain. A hook of another kind
+// with no such process still joins (an agent that runs a second agent's
+// hook file).
+func nestedAgent(s api.Session, h *hookCall) bool {
+	if s.Agent == "" || s.Agent == api.AgentGeneric || s.Agent == h.env.Agent {
+		return false
+	}
+	return h.agentPID > 0 && h.agentPID != s.PID
+}
+
+// taskID is the task the hook's session belongs to. A nested agent inherits
+// PILOTHOUSE_TASK_ID from the task's own agent; it is not the task's session.
+func (h *hookCall) taskID() string {
+	if h.nested {
+		return ""
+	}
+	return h.env.Env["PILOTHOUSE_TASK_ID"]
 }
 
 // adoptWrapped links a hook that arrived through a shared agent server to
@@ -570,7 +617,7 @@ func (d *Daemon) createSession(ctx context.Context, tx *store.Tx, h *hookCall, i
 		ID: id, Agent: h.env.Agent, Mode: h.mode, Machine: d.machine,
 		Title: titleFor(h.root, h.cwd, h.env.Agent), Cwd: h.cwd, RepoRoot: h.root, Branch: h.branch,
 		PID: h.agentPID, AgentSessionID: h.ev.AgentSessionID, TranscriptPath: h.ev.TranscriptPath,
-		TaskID: h.env.Env["PILOTHOUSE_TASK_ID"], State: api.StateStarting, StartedAt: now, UpdatedAt: now,
+		TaskID: h.taskID(), State: api.StateStarting, StartedAt: now, UpdatedAt: now,
 	}
 	return d.saveSession(ctx, tx, nil, s)
 }
@@ -594,7 +641,7 @@ func applyHook(s *api.Session, h *hookCall, now time.Time) {
 		s.RepoRoot, s.Branch = h.root, h.branch
 	}
 	if s.TaskID == "" {
-		s.TaskID = h.env.Env["PILOTHOUSE_TASK_ID"]
+		s.TaskID = h.taskID()
 	}
 	if s.ExitedAt != nil && ev.Kind != adapters.HookSessionEnd {
 		// A resumed conversation (same agent session id) is alive again.

@@ -48,6 +48,9 @@ func loadTasks() ([]api.Task, error) {
 	return f.Tasks, nil
 }
 
+// syncFile is (*os.File).Sync, which tests replace to see what is synced.
+var syncFile = (*os.File).Sync
+
 // updateTasks applies fn to the task list under an exclusive lock, so
 // concurrent `pilothouse task` invocations don't lose each other's writes,
 // and saves atomically.
@@ -77,11 +80,36 @@ func updateTasks(fn func([]api.Task) ([]api.Task, error)) error {
 	if err != nil {
 		return err
 	}
+	return writeStore(append(b, '\n'))
+}
+
+// writeStore replaces the task file with b. The new content is synced
+// before it takes the name: a rename alone can survive a power cut that
+// the data did not, leaving an empty file where every task was.
+func writeStore(b []byte) error {
 	tmp := StorePath() + ".tmp"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, StorePath())
+	if _, err = f.Write(b); err == nil {
+		err = syncFile(f)
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, StorePath()); err != nil {
+		return err
+	}
+	if d, err := os.Open(filepath.Dir(StorePath())); err == nil {
+		_ = syncFile(d) // persist the rename; best effort on filesystems that refuse
+		d.Close()
+	}
+	return nil
 }
 
 // saveTask inserts or replaces one task.

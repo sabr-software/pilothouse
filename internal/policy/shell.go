@@ -17,7 +17,10 @@ import (
 // shCmd is one simple command: words with quotes removed, plus its
 // redirections.
 type shCmd struct {
-	words   []string
+	words []string
+	// globs[i]: words[i] has an unquoted *, ?, [ or {, or starts with an
+	// unquoted ~, so the shell may expand it into other names.
+	globs   []bool
 	redirs  []shRedir
 	pipedIn bool // stdin comes from a previous command in a pipeline
 	// vars: a word or redirection target expands a parameter ($X, ${X},
@@ -29,6 +32,7 @@ type shCmd struct {
 type shRedir struct {
 	op     string // ">", ">>", "<", "<<", "<<<", "&>", ...
 	target string // file, fd number, here-doc delimiter or here-string
+	glob   bool   // target has an unquoted glob, brace or leading ~
 	// Here-documents, in heredoc mode only: the text between the
 	// operator's line and the delimiter line, and whether the shell
 	// expands it (the delimiter was not quoted).
@@ -59,6 +63,7 @@ func parseShellMode(s string, heredocs bool) shParse {
 		inWord  bool
 		quoted  bool // the current word used quotes or escapes
 		vars    bool // the current word expands a parameter
+		glob    bool // the current word has an unquoted glob, brace or leading ~
 		pending string
 		// lineStart is the index in out.cmds of the first command that
 		// started on the current line: its here-documents follow the line.
@@ -71,14 +76,14 @@ func parseShellMode(s string, heredocs bool) shParse {
 		w := word.String()
 		word.Reset()
 		inWord = false
-		wasQuoted := quoted
-		quoted = false
+		wasQuoted, wasGlob := quoted, glob
+		quoted, glob = false, false
 		if vars {
 			cur.vars = true
 			vars = false
 		}
 		if pending != "" {
-			r := shRedir{op: pending, target: w}
+			r := shRedir{op: pending, target: w, glob: wasGlob}
 			if pending == "<<" || pending == "<<-" {
 				r.expands = !wasQuoted
 			}
@@ -95,6 +100,7 @@ func parseShellMode(s string, heredocs bool) shParse {
 			return
 		}
 		cur.words = append(cur.words, w)
+		cur.globs = append(cur.globs, wasGlob)
 	}
 	end := func(pipe bool) {
 		flush()
@@ -213,6 +219,9 @@ func parseShellMode(s string, heredocs bool) shParse {
 		default:
 			if c == '$' && i+1 < len(s) && isParamStart(s[i+1]) {
 				vars = true
+			}
+			if c == '*' || c == '?' || c == '[' || c == '{' || (c == '~' && !inWord) {
+				glob = true
 			}
 			word.WriteByte(c)
 			inWord = true

@@ -154,9 +154,17 @@ await run(async () => {
   check('…with the text shrunk to fit the phone’s width', geo.screen <= geo.frame + 2 || geo.screen < geo.frame * 1.6, JSON.stringify(geo));
   check('fixed size → no resize posted', fixed.inputs.every((i) => !i.resize), JSON.stringify(fixed.inputs.slice(0, 3)));
 
-  // ---- Not available (devserver: 501) ----
+  // ---- Not available: a daemon without the live terminal answers 501 ----
+  apiR.on('POST', /^\/api\/sessions\/s_site03\/terminal\/token$/, () => ({ status: 501, json: { error: 'live terminal is not available yet', code: 'not_implemented' } }));
+  apiR.on('GET', /^\/api\/sessions\/s_site03\/terminal$/, () => ({ status: 501, json: { error: 'live terminal is not available yet', code: 'not_implemented' } }));
   await go(page, '/s/s_site03/terminal');
   check('501 → "isn’t available" with a way back', await waitText(page, 'The live terminal isn’t available', 6000) && !!(await page.$('.term-empty a[href="/s/s_site03"]')));
+  check('501 → the stream was asked and answered 501', apiR.find('GET', /^\/api\/sessions\/s_site03\/terminal$/).length === 1);
+  check('501 → the daemon’s reason is shown', (await text(page, '.term-empty')).includes('Live terminal is not available yet.'), (await text(page, '.term-empty')).replace(/\s+/g, ' '));
+
+  // ---- A session the computer doesn't know (devserver: 404) ----
+  await go(page, '/s/s_nope99/terminal');
+  check('404 → "Session not found"', await waitText(page, 'Session not found', 6000, '.term-empty') && !(await text(page, '.term-empty')).includes('isn’t available'), (await text(page, '.term-empty')).replace(/\s+/g, ' '));
 
   const errs = page._logs.filter((l) => !/status of (40[34]|501|503)/.test(l));
   check('no console errors', errs.length === 0, errs.join(' | ').slice(0, 300));

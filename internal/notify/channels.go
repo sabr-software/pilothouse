@@ -321,9 +321,10 @@ func escapeMarkup(s string) string {
 // ---- ntfy ----
 
 // Ntfy publishes to an ntfy topic (https://docs.ntfy.sh/publish/).
-// When the web app has a public URL, request notifications carry http
-// action buttons (Allow / Deny) backed by single-use action tokens, and a
-// click opens the request in the web app.
+// When the web app has a public URL, a click opens the request in the web
+// app, where allowing is signed by the device, and permission requests
+// carry one http action button, Deny, backed by a single-use token. There
+// is no Allow button: the topic is readable by whoever knows its name.
 //
 // Request notifications carry a sequence ID (X-Sequence-ID, ntfy server
 // 2.16+): the "waiting in the terminal" notice that follows a timeout
@@ -395,19 +396,16 @@ func (c *Ntfy) Request(ctx context.Context, n core.Notification) (*http.Request,
 		if pub := c.Pusher.PublicURL(); pub != "" {
 			link := Link(pub, n)
 			h.Set("Click", link)
-			// One-tap Allow/Deny only for permissions: a question needs an
-			// answer and a plan should be read, so those open the app.
+			// Open comes first: it is where a request is allowed, signed by
+			// the device. Deny is one tap, and only for permissions: a
+			// question needs an answer and a plan should be read.
+			actions = append(actions, "view, Open, "+link)
 			if n.Kind == core.NotifyRequest && n.Request != nil && n.Request.Status == api.RequestOpen && !n.Linked &&
 				(n.Request.Checkpoint == api.CheckpointPermission || n.Request.Checkpoint == "") {
-				allow := c.Pusher.ActionURL(n.Request.ID, api.BehaviorAllow)
-				deny := c.Pusher.ActionURL(n.Request.ID, api.BehaviorDeny)
-				if allow != "" && deny != "" {
-					actions = append(actions,
-						"http, Allow, "+allow+", method=POST, clear=true",
-						"http, Deny, "+deny+", method=POST, clear=true")
+				if deny := c.Pusher.DenyURL(n.Request.ID); deny != "" {
+					actions = append(actions, "http, Deny, "+deny+", method=POST, clear=true")
 				}
 			}
-			actions = append(actions, "view, Open, "+link)
 		}
 	}
 	if len(actions) > 0 {

@@ -63,8 +63,10 @@ type Config struct {
 		Telegram struct {
 			Enabled bool  `yaml:"enabled"`
 			ChatID  int64 `yaml:"chat_id"` // bound by the pairing code; 0 = not paired
-			// Decisions lets the buttons answer requests (default true).
-			// Off: Telegram only notifies.
+			// Decisions lets the buttons deny requests, answer questions
+			// and ask for plan changes, and replies reach agents (default
+			// true). It never allows a tool call or approves a plan: that
+			// is signed by a paired device. Off: Telegram only notifies.
 			Decisions *bool `yaml:"decisions"`
 			// APIBase overrides https://api.telegram.org (tests, proxies).
 			APIBase string `yaml:"api_base"`
@@ -157,7 +159,8 @@ const (
 	KeepAwakeOff     = "off"
 )
 
-// TelegramDecisions reports whether Telegram buttons may answer requests.
+// TelegramDecisions reports whether Telegram buttons and replies may act
+// (deny, answer a question, ask for plan changes, prompt an agent).
 func (c *Config) TelegramDecisions() bool {
 	return c.Notify.Telegram.Decisions == nil || *c.Notify.Telegram.Decisions
 }

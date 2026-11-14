@@ -19,7 +19,7 @@ In:
 - Presence-aware routing (OS idle on macOS/Linux, manual override).
 - Approvals: first answer wins; allow once / allow for session / deny with message.
 - Web app (PWA) served by the daemon; pairing by QR/one-time code; per-device P-256 keys sign every remote decision; Web Push (VAPID); works over Tailscale Serve HTTPS (`pilothouse remote tailscale`).
-- Notifications: desktop, Web Push, ntfy (with signed Allow/Deny action buttons), generic webhooks.
+- Notifications: desktop, Web Push, ntfy (with a one-tap Deny button; allowing opens the web app), generic webhooks.
 - Inbox TUI (Bubble Tea), CLI (`ls`, `approve`, `deny`, `log`, `explain`, `here/away/auto`, `setup`, `doctor`, `service`).
 - Tasks: `pilothouse task new "prompt"` → git worktree + branch + wrapped agent; `task ls|diff|done --pr`.
 - launchd/systemd user service install.
@@ -135,7 +135,7 @@ POST /v1/hook(env):
   return ad.EncodeResponse(ev, outcome)
 ```
 
-Grants (`scope: session`): shell tools store `Prefix` = the program plus its subcommand, skipping global flags and their values (`git -c k=v commit` → `git commit`); if the subcommand can't be determined safely, the grant covers only the exact command. Chained commands (`;`, `&&`, `|`, `$(…)`) are never covered. Other tools store the tool name only. Grants also answer a matching permission request directly (needed for Codex, whose pre-tool hook can't allow). Applied at pre_tool **after** deny/ask rules (deny always wins).
+Grants (`scope: session`): shell tools store `Prefix` = the program plus its subcommand, skipping global flags and their values (`git -c k=v commit` → `git commit`); if the subcommand can't be determined safely, the grant covers only the exact command. Chained commands (`;`, `&&`, `|`, `$(…)`) are never covered. Other tools store the tool name only. Grants also answer a matching permission request directly (needed for Codex, whose pre-tool hook can't allow). Applied at pre_tool **after** deny/ask rules (deny always wins). A grant ends with its session: grants are deleted when the session exits, and again if a later hook revives it (a resumed conversation asks again).
 
 ## 6. Adapters
 
@@ -204,9 +204,9 @@ The steps are `task.Manager.Prepare` (validate; read task.yaml once from the mai
 - Host allow-list (DNS-rebinding defense): `127.0.0.1:<port>`, `localhost:<port>`, and the host of `web.public_url`.
 - Pairing: `pilothouse pair` → one-time code (10 min) → URL `<base>/pair#<code>` + terminal QR. The page generates a non-extractable ECDSA P-256 key in IndexedDB, POSTs `/api/pair {code, name, public_key}` → device id + HttpOnly cookie `ph_dev` (SameSite=Strict, Secure on https). `pilothouse open` does the same for this machine's browser via a login link.
 - Auth: cookie on every `/api/*`; state-changing requests also need header `X-Pilothouse: 1` and a same-origin `Origin`.
-- Decisions: `POST /api/requests/{id}/decide {behavior, scope, message, ts, nonce, sig}`; `sig` = WebCrypto ECDSA-P256-SHA256 (P1363) over `pilothouse-decide:v1\n{id}\n{behavior}\n{scope}\n{ts}\n{nonce}`; |now−ts| ≤ 120 s; nonce single-use. By = `device:<id>`.
+- Decisions: `POST /api/requests/{id}/decide {behavior, scope, ts, nonce, sig}`; `sig` = WebCrypto ECDSA-P256-SHA256 (P1363) over `pilothouse-decide:v1\n{id}\n{behavior}\n{scope}\n{ts}\n{nonce}`; |now−ts| ≤ 120 s; nonce single-use. By = `device:<id>`. The v1 signature does not cover a message, so v1 takes none (400); a message goes through the signed `POST /api/requests/{id}/respond`, whose signature covers the whole payload.
 - `GET /api/snapshot`, `GET /api/events?after=` (SSE), session detail/events/seen, presence, push subscribe/unsubscribe, `GET /api/vapid`, device rename/sign-out.
-- ntfy actions: `POST /api/actions/{token}` where token = random 32 bytes stored hashed with (request, behavior, expiry = request expiry); single use.
+- ntfy actions: `POST /api/actions/{token}` where token = random 32 bytes stored hashed with (request, behavior, expiry = request expiry); single use. Deny only: a link is a bearer token, and an allow has to be signed by a paired device, so "Allow" opens the web app.
 - Security headers: strict CSP (`default-src 'self'`), `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy`, HSTS on https.
 - PWA: mobile-first, installable (manifest + service worker), dark and light, no build step (vanilla JS modules embedded with `go:embed`). Screens: Pair, Inbox (Needs you → big Allow / Allow for session / Deny), Sessions, Session detail (timeline), Settings (notifications, presence, device name, sign out). Service worker shows pushes and, where the platform supports notification actions, signs and posts Allow/Deny directly.
 - `pilothouse remote tailscale`: verify `tailscale` exists and HTTPS is enabled for the tailnet; run `tailscale serve --bg` to proxy HTTPS 443 → 127.0.0.1:7517; save `web.public_url`; `remote off|status`.

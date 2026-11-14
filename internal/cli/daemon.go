@@ -92,7 +92,7 @@ func newStartCmd() *cobra.Command {
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "pilothouse daemon started (pid %d)\n", h.PID)
 			if h.WebURL != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "web app: %s\n", h.WebURL)
+				fmt.Fprintf(cmd.OutOrStdout(), "web app: %s\n", oneLineText(h.WebURL))
 			} else if cfg, err := config.Load(); err == nil && cfg.Web.Addr != "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "! The web app didn't start, so no phone or browser can reach this daemon. Its port is probably in use by another Pilothouse: see %s\n", daemonLogPath())
 			}
@@ -151,7 +151,7 @@ func newStatusCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			if asJSON {
-				enc := json.NewEncoder(out)
+				enc := json.NewEncoder(jsonOut(out))
 				enc.SetIndent("", "  ")
 				if err := enc.Encode(st); err != nil {
 					return err
@@ -197,6 +197,7 @@ func collectStatus(ctx context.Context, c *client.Client) (daemonStatus, error) 
 }
 
 func printStatus(w io.Writer, st daemonStatus) {
+	forPrint(&st)
 	if !st.Running {
 		fmt.Fprintln(w, "daemon:   not running — start it with `pilothouse start`")
 		return

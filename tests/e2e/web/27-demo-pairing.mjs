@@ -98,6 +98,35 @@ await sleep(1500);
 check('mismatch: /pair stays on the pair screen', !!(await page.$('#pair-code')) && (await path()) === '/pair');
 await shot(page, '27-settings-mismatch');
 
+// ---- The key is read after the first draw ----
+// The key comes out of IndexedDB, which can answer after Settings is on
+// screen: the page must still say the key doesn't match.
+const slow = await page.evaluateOnNewDocument(() => {
+  let keys;
+  Object.defineProperty(self, 'PilothouseKeys', {
+    configurable: true,
+    get: () => keys,
+    set: (k) => {
+      const load = k.load;
+      k.load = (...a) => new Promise((r) => setTimeout(r, 700)).then(() => load.apply(k, a));
+      keys = k;
+    },
+  });
+});
+await page.goto(demo.base + '/settings', { waitUntil: 'domcontentloaded' });
+await page.waitForSelector('main .view.settings', { timeout: 15000 });
+check('mismatch found after the first draw: Settings says so', await waitText(page, 'Doesn’t match the key your computer has', 2500, 'main'));
+check('…and Pair again is the main action', await page.$$eval('main .key-setting a.btn.primary[href="/pair"]', (as) => as.length === 1));
+await page.removeScriptToEvaluateOnNewDocument(slow.identifier);
+
+// ---- A pairing link that isn't one ----
+await page.goto(demo.base + '/pair#%zz', { waitUntil: 'domcontentloaded' });
+check('a link with a bad % still opens the pair screen', await page.waitForSelector('#pair-code', { timeout: 5000 }).then(() => true, () => false));
+const scanned = await page.evaluate(() => import('/js/scan.js')
+  .then((m) => m.codeFromScan(location.origin + '/pair#%zz'))
+  .then((r) => r.error || 'took it as a code', (e) => 'threw: ' + e.message));
+check('…and the same link scanned is turned down in words', /isn’t a Pilothouse pairing code/.test(scanned), scanned);
+
 check('no page errors', !errs.length, errs.join(' | '));
 await demo.stop();
 process.exit(summary() ? 1 : 0);

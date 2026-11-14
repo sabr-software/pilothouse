@@ -95,6 +95,37 @@ func (s *Server) readSigned(w http.ResponseWriter, r *http.Request, action, targ
 	return true
 }
 
+// wholeRequest reports whether id is a request's whole id. The core
+// expands unique prefixes for the command line; a signature names the id
+// it was made for, so a signed call that names a prefix is refused. It
+// writes the error and returns false otherwise.
+func (s *Server) wholeRequest(w http.ResponseWriter, r *http.Request, id string) bool {
+	req, err := s.d.Core.Request(r.Context(), id)
+	if err != nil {
+		s.writeCoreErr(w, err)
+		return false
+	}
+	if req.ID != id {
+		writeErr(w, http.StatusNotFound, "not_found", "not found")
+		return false
+	}
+	return true
+}
+
+// wholeSession is wholeRequest for a session id.
+func (s *Server) wholeSession(w http.ResponseWriter, r *http.Request, id string) bool {
+	sess, err := s.d.Core.Session(r.Context(), id)
+	if err != nil {
+		s.writeCoreErr(w, err)
+		return false
+	}
+	if sess.ID != id {
+		writeErr(w, http.StatusNotFound, "not_found", "not found")
+		return false
+	}
+	return true
+}
+
 // verifyDeviceSig checks ts against the clock, the signature against the
 // device's key, and spends the nonce. It writes the error and returns
 // false on failure. Shared by v1 decisions and v2 actions.

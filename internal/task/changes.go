@@ -58,7 +58,10 @@ func Changes(ctx context.Context, t api.Task) (api.TaskDiff, error) {
 	}
 
 	diffArgs := func(format ...string) []string {
-		a := append([]string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M"}, format...)
+		// The a/ and b/ prefixes are spelled out because sections are found
+		// by their header and the user's git config can change them
+		// (diff.noprefix, diff.mnemonicPrefix).
+		a := append([]string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--src-prefix=a/", "--dst-prefix=b/"}, format...)
 		return append(append(a, revs...), "--")
 	}
 	raw, rawCut, err := gitRead(ctx, dir, maxGitMeta, diffArgs("--raw", "-z")...)
@@ -69,7 +72,7 @@ func Changes(ctx context.Context, t api.Task) (api.TaskDiff, error) {
 	if err != nil {
 		return d, err
 	}
-	files := parseRaw(raw)
+	files, from := parseRaw(raw)
 	counts := parseNumstat(num)
 	patch, patchCut, err := gitRead(ctx, dir, maxPatchRead, diffArgs("--patch", "--unified=3")...)
 	if err != nil {
@@ -77,6 +80,15 @@ func Changes(ctx context.Context, t api.Task) (api.TaskDiff, error) {
 	}
 	sections := splitPatch(patch)
 	d.Truncated = rawCut || patchCut
+	// A file's sections are found by their header, never by position: a
+	// file that changes type (into a symlink, say) is one entry in --raw
+	// but two sections, the old file deleted and the new one created, and
+	// counting would give every later file its neighbour's diff.
+	byHeader := map[string][]int{}
+	for i, s := range sections {
+		h, _, _ := bytes.Cut(s, []byte("\n"))
+		byHeader[string(h)] = append(byHeader[string(h)], i)
+	}
 
 	total := 0
 	for i := range files {
@@ -84,15 +96,17 @@ func Changes(ctx context.Context, t api.Task) (api.TaskDiff, error) {
 		if i < len(counts) && counts[i].path == f.Path {
 			f.Added, f.Removed = counts[i].added, counts[i].removed
 		}
+		mine := byHeader["diff --git "+gitQuote("a/"+from[i])+" "+gitQuote("b/"+f.Path)]
 		switch {
-		case i >= len(sections):
+		case len(mine) == 0: // the patch was cut before it
 			f.Truncated = f.Added+f.Removed > 0
 		case total >= maxTotalDiff:
 			f.Truncated, d.Truncated = true, true
 		default:
-			f.Diff, f.Truncated = hunks(sections[i], maxFileDiff)
-			if i == len(sections)-1 && patchCut {
-				f.Truncated = true
+			for _, j := range mine {
+				h, cut := hunks(sections[j], maxFileDiff-len(f.Diff))
+				f.Diff += h
+				f.Truncated = f.Truncated || cut || (j == len(sections)-1 && patchCut)
 			}
 			total += len(f.Diff)
 		}
@@ -187,9 +201,9 @@ func (l *limitedBuffer) Write(p []byte) (int, error) {
 }
 
 // parseRaw reads `git diff --raw -z`: ":srcmode dstmode srcsha dstsha
-// status\0path\0" (two paths for renames and copies).
-func parseRaw(b []byte) []api.FilePreview {
-	var out []api.FilePreview
+// status\0path\0" (two paths for renames and copies). from[i] is the path
+// out[i] had before, which is its own unless it was renamed or copied.
+func parseRaw(b []byte) (out []api.FilePreview, from []string) {
 	tok := strings.Split(string(b), "\x00")
 	for i := 0; i < len(tok); i++ {
 		meta := tok[i]
@@ -202,6 +216,7 @@ func parseRaw(b []byte) []api.FilePreview {
 		}
 		status := fields[4]
 		f := api.FilePreview{Path: tok[i+1], Op: api.FileEdit}
+		old := f.Path
 		i++
 		switch status[0] {
 		case 'A', 'C':
@@ -221,8 +236,41 @@ func parseRaw(b []byte) []api.FilePreview {
 		}
 		f.Lang = langFor(f.Path)
 		out = append(out, f)
+		from = append(from, old)
 	}
-	return out
+	return out, from
+}
+
+// gitQuote writes a path the way git does in a "diff --git" header: as it
+// is, or in double quotes with C escapes when it holds a quote, a backslash
+// or a control character. (Bytes above 0x7f are left alone because gitRead
+// turns core.quotePath off.)
+func gitQuote(p string) string {
+	const named = "abtnvfr" // \a (7) to \r (13)
+	var sb strings.Builder
+	quoted := false
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		switch {
+		case c == '"' || c == '\\':
+			sb.WriteByte('\\')
+			sb.WriteByte(c)
+			quoted = true
+		case c >= 7 && c <= 13:
+			sb.WriteByte('\\')
+			sb.WriteByte(named[c-7])
+			quoted = true
+		case c < 0x20 || c == 0x7f:
+			fmt.Fprintf(&sb, "\\%03o", c)
+			quoted = true
+		default:
+			sb.WriteByte(c)
+		}
+	}
+	if !quoted {
+		return p
+	}
+	return `"` + sb.String() + `"`
 }
 
 type numstat struct {

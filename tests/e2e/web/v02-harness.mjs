@@ -214,8 +214,12 @@ export async function router(page, sse) {
       if (out === 'pass') return req.continue();
       if (out && out.sse) return req.continue({ url: `http://127.0.0.1:${sse.port}${out.sse}${u.search}` });
       if (out && out.abort) return req.abort('connectionreset');
-      if (out && out.status === 204) return req.respond({ status: 204, body: '' });
-      return req.respond({ status: (out && out.status) || 200, contentType: 'application/json', body: JSON.stringify((out && out.json) ?? {}) });
+      const answer = () => (out && out.status === 204
+        ? req.respond({ status: 204, body: '' })
+        : req.respond({ status: (out && out.status) || 200, contentType: 'application/json', body: JSON.stringify((out && out.json) ?? {}) }));
+      // {delay: ms} holds the answer back, for what happens while a call is in flight.
+      if (out && out.delay) return void setTimeout(() => answer().catch(() => {}), out.delay);
+      return answer();
     }
     req.continue();
   });

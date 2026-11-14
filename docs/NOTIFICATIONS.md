@@ -9,10 +9,15 @@ request is held and sent to every remote channel you set up:
 | Channel | Set up with | Answer from it | Works without Tailscale |
 |---|---|---|---|
 | Web app (Web Push) | `pilothouse remote tailscale` + `pilothouse pair` | yes, signed by the phone's key | no |
-| Telegram | `pilothouse notify telegram` | yes: buttons, replies | yes |
-| ntfy app | `pilothouse notify ntfy` | Allow / Deny on permission requests when remote access is on | notifications yes, buttons no |
+| Telegram | `pilothouse notify telegram` | deny, answer questions, request plan changes, reply; allowing opens the web app | yes, except allowing |
+| ntfy app | `pilothouse notify ntfy` | Deny on permission requests when remote access is on; allowing opens the web app | notifications yes, buttons no |
 | Slack / Discord | `notify.webhooks` in `config.yaml` | no | yes |
 | Desktop | on by default (`notify.desktop`) | no | — |
+
+Allowing a tool call or approving a plan is always signed by a paired
+device (or done at the computer). Telegram and ntfy can refuse a request
+with one tap, and link to the web app for allowing it. Before 0.4.15 they
+could also allow.
 
 On macOS a desktop notification opens the request or session in the web app
 when you click it, if `terminal-notifier` is installed (`brew install
@@ -81,7 +86,9 @@ remote notification about it is taken back:
 ## Telegram
 
 Telegram is a two-way channel that needs no Tailscale: your machine polls
-Telegram's Bot API, so nothing listens for inbound connections.
+Telegram's Bot API, so nothing listens for inbound connections. Allowing a
+request is the exception: that happens in the web app, which needs remote
+access (`pilothouse remote tailscale`) and a paired phone.
 
 ### Set it up
 
@@ -110,13 +117,16 @@ deletes the token; delete the bot in @BotFather (`/deletebot`) if you don't need
 
 ### Using it
 
-- **Permission requests** arrive with **Allow**, **Allow for session** and
-  **Deny**.
+- **Permission requests** arrive with **Deny** and, when remote access is
+  on, **Allow in the app**, which opens the request in the web app where
+  your paired phone signs the approval. Without remote access the message
+  says to allow it in the app or at the computer.
 - **Questions** show one question at a time with a button per option. For
   multi-select questions the buttons toggle (☐/☑) and **Done** moves on. The
   last answer answers the agent. **Answer in the app** opens the web app for
   free-text answers (needs remote access).
-- **Plans** arrive with **Approve** and **Request changes**. Request changes
+- **Plans** arrive with **Approve in the app** (with remote access) and
+  **Request changes**. Request changes
   asks you to reply with what should change; your reply goes to the agent,
   which revises the plan. Replying straight to the plan message works too.
 - **"Finished" messages**: reply to one to send that agent a follow-up
@@ -140,6 +150,7 @@ notify:
     enabled: true
     chat_id: 123456789     # written by pairing; 0 = not paired
     decisions: true        # false: notify only (no buttons, no replies)
+                           # true never allows: see "Using it"
     api_base: ""           # Bot API server; default https://api.telegram.org
 ```
 
@@ -160,8 +171,11 @@ restart.
   plans). If that's not acceptable for a repo, use the web app (end to end
   between your machine and your phone over Tailscale) or `--notify-only`.
 - Unlike the web app, Telegram answers are not signed by a key on your phone:
-  anyone who can use your Telegram account can answer. Telegram's own
-  security (passcode, two-step verification) applies.
+  anyone who can use your Telegram account can press the buttons. That is
+  why Telegram cannot allow a tool call or approve a plan: it can deny,
+  ask for plan changes, pick a question's options and send a follow-up
+  prompt. Telegram's own security (passcode, two-step verification)
+  applies to those.
 
 ### Troubleshooting
 
@@ -183,8 +197,10 @@ pilothouse notify ntfy my-topic --server https://ntfy.example.com
 
 Topics on ntfy.sh are public to anyone who knows the name, so the default is
 random. Subscribe to it in the ntfy app (iPhone or Android). With remote
-access on, permission requests carry Allow / Deny buttons backed by
-single-use action tokens; questions and plans open the web app. An access token goes in `notify.ntfy.token`
+access on, permission requests carry **Open**, which opens the request in
+the web app where your paired phone signs an Allow, and a one-tap **Deny**
+backed by a single-use token; questions and plans open the web app. Anyone
+who can read the topic can press Deny, and nothing more. An access token goes in `notify.ntfy.token`
 (`tk_…` or `user:pass`). The daemon reads ntfy settings at start:
 `pilothouse service restart` after changing them (setup does this for you).
 

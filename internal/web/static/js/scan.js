@@ -23,7 +23,8 @@ export function codeFromScan(text) {
   if (CODE_RE.test(t)) return { code: t.toUpperCase() };
   let u;
   try { u = new URL(t); } catch { return { error: 'That QR code isn’t a Pilothouse pairing code.' }; }
-  const code = decodeURIComponent(u.hash.slice(1)).trim();
+  let code = '';
+  try { code = decodeURIComponent(u.hash.slice(1)).trim(); } catch { /* "#%zz": not a code */ }
   if (u.pathname !== '/pair' || !CODE_RE.test(code)) return { error: 'That QR code isn’t a Pilothouse pairing code.' };
   if (u.origin !== location.origin) return { error: `That code is for ${u.host}, not this app (${location.host}).` };
   return { code };

@@ -19,52 +19,267 @@ import { h, icon, add } from './dom.js';
 
 const MAX_INPUT = 200000;
 
-/** The text of a leading level-1 heading, or ''. */
-export function markdownTitle(text) {
-  const m = /^\s*#\s+(.+?)\s*#*\s*$/m.exec(String(text || '').split('\n').find((l) => l.trim()) || '');
-  return m ? m[1] : '';
+// What a regex's \s matches. charCodeAt past the end is NaN: not a space.
+function isSpace(c) {
+  return c === 32 || (c >= 9 && c <= 13) || c === 0xa0 || c === 0x1680 || (c >= 0x2000 && c <= 0x200a) ||
+    c === 0x2028 || c === 0x2029 || c === 0x202f || c === 0x205f || c === 0x3000 || c === 0xfeff;
 }
 
-// Inline tokens, tried left to right; the earliest match wins. No
-// lookbehind: older Safari can't parse it and would refuse the module.
-// [kind, regex, group of the content, group of a kept prefix]
+/**
+ * An ATX heading line ("## Text ##") → {level, text}, or null. Read by
+ * hand, like everything an agent's text can make slow: a regex with a
+ * lazy middle and optional spaces around it took seconds on a heading
+ * with a long run of spaces.
+ */
+function heading(line) {
+  let i = 0;
+  while (i < 3 && isSpace(line.charCodeAt(i))) i++;
+  let level = 0;
+  while (line.charCodeAt(i + level) === 35) level++;
+  if (level < 1 || level > 6 || !isSpace(line.charCodeAt(i + level))) return null;
+  let a = i + level;
+  while (isSpace(line.charCodeAt(a))) a++;
+  // Without the closing "##" and the spaces around it.
+  let b = line.length;
+  while (b > a && isSpace(line.charCodeAt(b - 1))) b--;
+  while (b > a && line.charCodeAt(b - 1) === 35) b--;
+  while (b > a && isSpace(line.charCodeAt(b - 1))) b--;
+  return { level, text: line.slice(a, b) };
+}
+
+/** The text of a leading level-1 heading, or ''. */
+export function markdownTitle(text) {
+  const src = String(text || '');
+  const from = src.search(/\S/); // the first line with anything on it
+  if (from < 0) return '';
+  let to = from;
+  for (let c; to < src.length && (c = src.charCodeAt(to)) !== 10 && c !== 13; to++);
+  const head = heading(src.slice(from, to));
+  return head && head.level === 1 ? head.text : '';
+}
+
+// ---------- Inline ----------
+//
+// Inline tokens. The earliest one wins; at the same place, the first in
+// this order: `code`, [link](url), <autolink>, **strong**, __strong__,
+// ~~del~~, *em*, _em_.
+//
+// An agent writes this text, so the scan has to stay quick whatever it
+// holds: a long run of openers that never close ("`a`[b `a`[b …") must
+// not freeze the page that asks for an answer. So no regex is run over
+// "the rest of the string" again and again. Each kind has a finder that
+// walks forward by hand, keeps the match it found until the scan has
+// passed it, and remembers when nothing further can match. A whole
+// paragraph costs about one pass per kind.
+
+/** Longer inline text than this is shown as written (a safety valve). */
+const MAX_INLINE = 20000;
+
+// charCodeAt past the end is NaN (c !== c).
+const notSpace = (c) => c === c && !isSpace(c);
+const notSpaceOrStar = (c) => c !== 42 && notSpace(c);
+const opensWord = (c) => c === 40 || isSpace(c); // "(" or a space before _ and __
+const endsWord = (c) => c !== c || isSpace(c) || (c < 128 && '.,;:!?)'.includes(String.fromCharCode(c)));
+
+/**
+ * Wraps find(from) → {at, end, a, b} | null, where null means "nothing
+ * from here to the end". The match is kept while the scan is before it.
+ */
+function finder(find) {
+  let hit; // undefined: not looked yet; null: nothing left
+  return (pos) => {
+    if (hit === null) return null;
+    if (hit === undefined || hit.at < pos) hit = find(pos);
+    return hit;
+  };
+}
+
+/** `code`: no backtick or line break inside. */
+function codeFinder(s) {
+  let nl = -1;
+  return finder((pos) => {
+    let i = s.indexOf('`', pos);
+    while (i >= 0) {
+      const j = s.indexOf('`', i + 1);
+      if (j < 0) return null;
+      if (nl <= i) { nl = s.indexOf('\n', i + 1); if (nl < 0) nl = s.length; }
+      if (j > i + 1 && nl > j) return { at: i, end: j + 1, a: i + 1, b: j };
+      i = j;
+    }
+    return null;
+  });
+}
+
+/** [label](url), [label](<url>), [label](url "title"). */
+function linkFinder(s) {
+  const at = (k) => s.charCodeAt(k);
+  const inUrl = (c) => c === c && c !== 41 && c !== 62 && !isSpace(c); // not ) > or a space
+  let nl = -1; // the next line break and "]", looked up once per stretch
+  let close = -1;
+  // URLs starting in [deadLo, deadHi) run to the same end and lead nowhere.
+  let deadLo = -1;
+  let deadHi = -1;
+  let noQuote = false; // no closing " further on
+  /** What follows "](": the URL, an optional "title" and ")". */
+  function tail(k) {
+    while (isSpace(at(k))) k++;
+    const u = at(k) === 60 && inUrl(at(k + 1)) ? k + 1 : k; // "<" before the URL
+    if (u >= deadLo && u < deadHi) return null;
+    let e = u;
+    while (inUrl(at(e))) e++;
+    if (e === u) return null;
+    const p = at(e) === 62 ? e + 1 : e;
+    let q = p;
+    while (isSpace(at(q))) q++;
+    if (at(q) === 41) return { url: s.slice(u, e), end: q + 1 };
+    if (q > p && at(q) === 34 && !noQuote) {
+      const z = s.indexOf('"', q + 1);
+      if (z < 0) {
+        noQuote = true;
+      } else {
+        let r = z + 1;
+        while (isSpace(at(r))) r++;
+        if (at(r) === 41) return { url: s.slice(u, e), end: r + 1 };
+      }
+    }
+    deadLo = u;
+    deadHi = e;
+    return null;
+  }
+  return finder((pos) => {
+    let i = s.indexOf('[', pos);
+    while (i >= 0) {
+      if (close <= i) close = s.indexOf(']', i + 1);
+      const j = close;
+      if (j < 0) return null;
+      if (nl <= i) { nl = s.indexOf('\n', i + 1); if (nl < 0) nl = s.length; }
+      if (nl < j) { i = s.indexOf('[', nl + 1); continue; }
+      if (j > i + 1 && at(j + 1) === 40) {
+        const t = tail(j + 2);
+        if (t) return { at: i, end: t.end, a: i + 1, b: j, url: t.url };
+      }
+      // Every "[" before this "]" would end at it too.
+      i = s.indexOf('[', j + 1);
+    }
+    return null;
+  });
+}
+
+const SCHEME_RE = /(?:https?|mailto):/y;
+
+/** <https://…> and <mailto:…>. */
+function autoFinder(s) {
+  return finder((pos) => {
+    let i = s.indexOf('<', pos);
+    while (i >= 0) {
+      let k = i + 1;
+      SCHEME_RE.lastIndex = k;
+      if (SCHEME_RE.test(s)) {
+        const from = SCHEME_RE.lastIndex;
+        k = from;
+        let c;
+        while ((c = s.charCodeAt(k)) === c && c !== 62 && !isSpace(c)) k++;
+        if (k > from && c === 62) return { at: i, end: k + 1, a: i + 1, b: k };
+        // Any "<" before k would run to the same end.
+      }
+      i = s.indexOf('<', k);
+    }
+    return null;
+  });
+}
+
+/** "No span opens after here", kept like a match that is never reached. */
+const NOT_YET = { at: Infinity };
+
+/**
+ * A span between two marks d: **strong**, ~~del~~, *em*, and __strong__ /
+ * _em_ (word: true — these need a space or "(" before and a space,
+ * punctuation or the end after, so snake_case is left alone; right after
+ * another token counts as a start too). The text can't start or end with
+ * a space: inner(c) says what may sit next to the marks.
+ */
+function spanFinder(s, d, inner, word) {
+  const L = d.length;
+  const at = (k) => s.charCodeAt(k);
+  let closers = null; // where a closing mark may sit, in order
+  function closerFrom(min) {
+    if (!closers) {
+      closers = [];
+      for (let j = s.indexOf(d, 1); j >= 0; j = s.indexOf(d, j + 1)) {
+        if (inner(at(j - 1)) && (!word || endsWord(at(j + L)))) closers.push(j);
+      }
+    }
+    let lo = 0;
+    let hi = closers.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (closers[mid] < min) lo = mid + 1; else hi = mid;
+    }
+    return lo < closers.length ? closers[lo] : -1;
+  }
+  /** The span opening at i; null: no later opener can close either. */
+  function open(i) {
+    const c = closerFrom(i + L + 1);
+    return c < 0 ? null : { at: i, end: c + L, a: i + L, b: c };
+  }
+  function find(pos) {
+    for (let i = s.indexOf(d, pos); i >= 0; i = s.indexOf(d, i + 1)) {
+      if (!inner(at(i + L)) || (word && i !== pos && !opensWord(at(i - 1)))) continue;
+      const m = open(i);
+      if (m || !word || i === pos) return m;
+      break;
+    }
+    // A word mark before the ones tried can still open a span, once the
+    // scan stops right at it (after another token).
+    return word ? NOT_YET : null;
+  }
+  if (!word) return finder(find);
+  let hit;
+  return (pos) => {
+    if (hit === null) return null;
+    if (hit === undefined || hit.at < pos) hit = find(pos);
+    // A mark right here opens a span whatever is before it.
+    else if (hit.at > pos && s.startsWith(d, pos) && inner(at(pos + L))) hit = open(pos);
+    return hit === NOT_YET ? null : hit;
+  };
+}
+
 const INLINE = [
-  ['code', /`([^`\n]+)`/, 1],
-  ['link', /\[([^\]\n]+)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/, 1],
-  ['auto', /<((?:https?|mailto):[^>\s]+)>/, 1],
-  ['strong', /\*\*(?=\S)([\s\S]*?\S)\*\*/, 1],
-  ['strong', /(^|[\s(])__(?=\S)([\s\S]*?\S)__(?=$|[\s.,;:!?)])/, 2, 1],
-  ['del', /~~(?=\S)([\s\S]*?\S)~~/, 1],
-  ['em', /\*(?=[^\s*])([\s\S]*?[^\s*])\*/, 1],
-  ['em', /(^|[\s(])_(?=\S)([\s\S]*?\S)_(?=$|[\s.,;:!?)])/, 2, 1],
+  ['code', codeFinder],
+  ['link', linkFinder],
+  ['auto', autoFinder],
+  ['strong', (s) => spanFinder(s, '**', notSpace, false)],
+  ['strong', (s) => spanFinder(s, '__', notSpace, true)],
+  ['del', (s) => spanFinder(s, '~~', notSpace, false)],
+  ['em', (s) => spanFinder(s, '*', notSpaceOrStar, false)],
+  ['em', (s) => spanFinder(s, '_', notSpace, true)],
 ];
 
 /** Inline formatting as nodes. */
 export function inlineMarkdown(text, depth = 0) {
+  const s = String(text || '');
+  if (!s) return [];
+  if (depth > 6 || s.length > MAX_INLINE) return [s];
   const out = [];
-  let s = String(text || '');
-  while (s) {
+  const finders = INLINE.map(([kind, make]) => [kind, make(s)]);
+  let pos = 0;
+  while (pos < s.length) {
     let best = null;
-    for (const [kind, re, g, pg] of INLINE) {
-      const m = re.exec(s);
-      if (!m) continue;
-      const pre = pg ? m[pg].length : 0;
-      if (!best || m.index + pre < best.at) best = { kind, m, g, at: m.index + pre };
+    let kind = '';
+    for (const [k, next] of finders) {
+      const m = next(pos);
+      if (m && (!best || m.at < best.at)) { best = m; kind = k; }
     }
-    if (!best || depth > 6) {
-      out.push(s);
-      break;
-    }
-    const { kind, m, g, at } = best;
-    if (at > 0) out.push(s.slice(0, at));
-    const inner = m[g];
+    if (!best) break;
+    if (best.at > pos) out.push(s.slice(pos, best.at));
+    const inner = s.slice(best.a, best.b);
     switch (kind) {
       case 'code':
         out.push(h('code', null, inner));
         break;
       case 'link':
         out.push(h('span', { class: 'md-link' }, inlineMarkdown(inner, depth + 1)));
-        if (m[2] !== inner) out.push(' ', h('span', { class: 'md-url' }, '(' + m[2] + ')'));
+        if (best.url !== inner) out.push(' ', h('span', { class: 'md-url' }, '(' + best.url + ')'));
         break;
       case 'auto':
         out.push(h('span', { class: 'md-url' }, inner));
@@ -79,22 +294,27 @@ export function inlineMarkdown(text, depth = 0) {
         out.push(h('em', null, inlineMarkdown(inner, depth + 1)));
         break;
     }
-    s = s.slice(m.index + m[0].length);
+    pos = best.end;
   }
+  if (pos < s.length) out.push(s.slice(pos));
   return out;
 }
 
 const LIST_RE = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
 const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})\s*([\w+#.-]*)/;
 const HR_RE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
-const HEAD_RE = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
-const TABLE_SEP_RE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+const TABLE_DASH_RE = /^:?-{2,}:?$/;
 
 function splitRow(line) {
   let l = line.trim();
   if (l.startsWith('|')) l = l.slice(1);
   if (l.endsWith('|')) l = l.slice(0, -1);
   return l.split('|').map((c) => c.trim());
+}
+
+/** The line under a table's head: "|---|:--:|" (cells of dashes). */
+function isTableSep(line) {
+  return line.includes('-') && splitRow(line).every((c) => TABLE_DASH_RE.test(c));
 }
 
 function indentOf(s) {
@@ -129,10 +349,12 @@ function blocks(lines, opts, depth) {
       continue;
     }
 
-    const head = HEAD_RE.exec(line);
+    const head = heading(line);
     if (head) {
-      const level = Math.min(6, head[1].length + offset);
-      out.push(h('h' + level, null, inlineMarkdown(head[2])));
+      // Never above the level this text starts at: a heading that only
+      // appears inside a quote or a list isn't counted in the offset.
+      const level = Math.max(opts.base, Math.min(6, head.level + offset));
+      out.push(h('h' + level, null, inlineMarkdown(head.text)));
       i++;
       continue;
     }
@@ -150,7 +372,7 @@ function blocks(lines, opts, depth) {
       continue;
     }
 
-    if (line.includes('|') && i + 1 < lines.length && TABLE_SEP_RE.test(lines[i + 1])) {
+    if (line.includes('|') && i + 1 < lines.length && isTableSep(lines[i + 1])) {
       const headCells = splitRow(line);
       i += 2;
       const rows = [];
@@ -170,7 +392,7 @@ function blocks(lines, opts, depth) {
 
     // Paragraph: until a blank line or another block starts.
     const para = [];
-    while (i < lines.length && lines[i].trim() && !FENCE_RE.test(lines[i]) && !HEAD_RE.test(lines[i]) &&
+    while (i < lines.length && lines[i].trim() && !FENCE_RE.test(lines[i]) && !heading(lines[i]) &&
       !/^\s{0,3}>/.test(lines[i]) && !(para.length && LIST_RE.test(lines[i])) && !(para.length && HR_RE.test(lines[i]))) {
       para.push(lines[i++].trim());
     }
@@ -243,9 +465,10 @@ export function renderMarkdown(text, opts = {}) {
   let fenced = false;
   for (const l of lines) {
     if (FENCE_RE.test(l)) fenced = !fenced;
-    const m = !fenced && HEAD_RE.exec(l);
-    if (m) top = Math.min(top, m[1].length);
+    const m = !fenced && heading(l);
+    if (m) top = Math.min(top, m.level);
   }
-  const o = { ...opts, offset: (opts.baseLevel || 3) - top };
+  const base = Math.max(1, Math.min(6, Math.floor(Number(opts.baseLevel)) || 3));
+  const o = { ...opts, base, offset: base - top };
   return h('div', { class: 'md' }, blocks(lines, o, 0));
 }

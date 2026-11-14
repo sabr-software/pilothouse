@@ -153,6 +153,21 @@ async function updateBadge(count) {
   } catch { /* not allowed here */ }
 }
 
+/**
+ * The path a notification opens: `url` when it is a page of this app, else
+ * `fallback`. A push names where to go; it never gets to name another site
+ * ("//host/…" starts with a slash too).
+ */
+function appPath(url, fallback) {
+  if (typeof url === 'string' && url) {
+    try {
+      const u = new URL(url, self.location.origin);
+      if (u.origin === self.location.origin) return u.pathname + u.search + u.hash;
+    } catch { /* not a URL */ }
+  }
+  return fallback || '/';
+}
+
 async function showResolved(d) {
   const id = d.request_id;
   const prev = await notificationsFor(id, d.tag);
@@ -169,7 +184,7 @@ async function showResolved(d) {
     icon: ICON,
     badge: BADGE,
     timestamp: Date.now(),
-    data: { url: d.url || (id ? '/r/' + id : '/'), request_id: id, resolved: true },
+    data: { url: appPath(d.url, id ? '/r/' + id : '/'), request_id: id, resolved: true },
   });
   await updateBadge(typeof d.open_count === 'number' ? d.open_count : undefined);
 }
@@ -187,7 +202,7 @@ async function showRequest(d) {
     badge: BADGE,
     timestamp: Date.now(),
     requireInteraction: isRequest,
-    data: { url: d.url || (id ? '/r/' + id : '/'), request_id: id, checkpoint: d.checkpoint || (permission ? 'permission' : ''), expires_at: d.expires_at || 0 },
+    data: { url: appPath(d.url, id ? '/r/' + id : '/'), request_id: id, checkpoint: d.checkpoint || (permission ? 'permission' : ''), expires_at: d.expires_at || 0 },
   };
   if (id && permission && d.actions !== false) {
     opts.actions = [
@@ -199,14 +214,27 @@ async function showRequest(d) {
   if (isRequest) await updateBadge(typeof d.open_count === 'number' ? d.open_count : undefined);
 }
 
+// Everything that shows or counts notifications takes its turn. Reading the
+// list (for the badge, or to find a request's notification) while another
+// push is still putting its notification up makes Chrome forget that one:
+// two requests arriving together left one of them without a notification
+// the worker could find, answer from or replace.
+let turn = Promise.resolve();
+function inTurn(fn) {
+  const p = turn.then(fn, fn);
+  turn = p.catch(() => {});
+  return p;
+}
+
 self.addEventListener('push', (e) => {
   let p = {};
   try { p = e.data ? e.data.json() : {}; } catch { p = { title: 'Pilothouse', body: e.data && e.data.text() }; }
   const d = normalize(p);
-  e.waitUntil(d.resolved ? showResolved(d) : showRequest(d));
+  e.waitUntil(inTurn(() => (d.resolved ? showResolved(d) : showRequest(d))));
 });
 
-async function focusOrOpen(url) {
+async function focusOrOpen(to) {
+  const url = appPath(to, '/'); // a notification shown by an older worker may hold anything
   const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
   for (const w of wins) {
     if (new URL(w.url).origin !== self.location.origin) continue;
@@ -232,16 +260,18 @@ self.addEventListener('notificationclick', (e) => {
       const res = await self.PilothouseKeys.respond(data.request_id, body);
       if (res.ok) {
         await tell(e.action === 'allow' ? 'Allowed' : 'Denied', true);
-        await updateBadge();
+        await inTurn(() => updateBadge());
         return;
       }
       if (res.status === 409) {
-        await self.registration.showNotification('Already answered', {
-          body: 'Someone answered this request on another device.',
-          tag: n.tag, renotify: false, icon: ICON, badge: BADGE,
-          data: { url: data.url || '/', request_id: data.request_id, resolved: true },
+        await inTurn(async () => {
+          await self.registration.showNotification('Already answered', {
+            body: 'Someone answered this request on another device.',
+            tag: n.tag, renotify: false, icon: ICON, badge: BADGE,
+            data: { url: appPath(data.url, '/'), request_id: data.request_id, resolved: true },
+          });
+          await updateBadge();
         });
-        await updateBadge();
         return;
       }
       // Anything else (signed out, clock skew, offline): open the request.
@@ -249,11 +279,25 @@ self.addEventListener('notificationclick', (e) => {
     })());
     return;
   }
-  e.waitUntil(Promise.all([focusOrOpen(data.url || '/'), updateBadge()]));
+  e.waitUntil(Promise.all([focusOrOpen(data.url || '/'), inTurn(() => updateBadge())]));
+});
+
+// The app answered a request itself and asks for its notifications to be
+// closed (js/push.js): done here, in turn, so the page never reads the list
+// while a push is being shown.
+self.addEventListener('message', (e) => {
+  const m = e.data || {};
+  if (m.type !== 'close-request' || typeof m.id !== 'string' || !m.id) return;
+  e.waitUntil(inTurn(async () => {
+    const all = await self.registration.getNotifications();
+    for (const n of all) {
+      if (n.tag === 'req-' + m.id || n.tag === m.id || (n.data && n.data.request_id === m.id)) n.close();
+    }
+  }));
 });
 
 self.addEventListener('notificationclose', (e) => {
-  e.waitUntil(updateBadge());
+  e.waitUntil(inTurn(() => updateBadge()));
 });
 
 // The push service rotated the subscription: re-subscribe and tell the daemon.

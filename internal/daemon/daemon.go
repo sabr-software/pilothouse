@@ -96,6 +96,10 @@ type Options struct {
 	// config (desktop.go).
 	Desktop *desktop.Opener
 
+	// afterPlan runs once a permission hook has chosen its route and
+	// before its request is stored (tests: the window in which the person
+	// can come back).
+	afterPlan func()
 	// keepAwake replaces the platform's sleep inhibitor (tests).
 	keepAwake *awakeRunner
 }

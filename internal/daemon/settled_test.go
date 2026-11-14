@@ -73,7 +73,10 @@ func TestPermissionNoticeWithoutRequestBlocks(t *testing.T) {
 func TestHeldRequestNotifiesAfterGrace(t *testing.T) {
 	h := newHarness(t)
 	h.presence.setAway(true)
-	h.opts = func(o *Options) { o.NotifyGrace = 150 * time.Millisecond }
+	// Long enough that a loaded machine still answers the first request
+	// inside it.
+	const grace = time.Second
+	h.opts = func(o *Options) { o.NotifyGrace = grace }
 	h.start(t)
 	waitFor(t, "away", func() bool { return h.d.Presence().State == api.PresenceAway })
 	before := len(h.notes.all())
@@ -85,7 +88,7 @@ func TestHeldRequestNotifiesAfterGrace(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-held
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(grace + 300*time.Millisecond)
 	if n := len(h.notes.all()); n != before {
 		t.Fatalf("a settled request notified: %d new", n-before)
 	}

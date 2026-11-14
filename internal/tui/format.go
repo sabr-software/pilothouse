@@ -11,6 +11,7 @@ import (
 
 	"github.com/sabr-software/pilothouse/internal/api"
 	"github.com/sabr-software/pilothouse/internal/paths"
+	"github.com/sabr-software/pilothouse/internal/termsafe"
 )
 
 // Age formats how long something has been waiting. Seconds are shown for
@@ -33,7 +34,9 @@ func Age(d time.Duration) string {
 	}
 }
 
-// ShortPath replaces the user's home directory with ~.
+// ShortPath replaces the user's home directory with ~. It is for display:
+// an agent chooses the paths it works on, so control characters in one
+// come back visible (termsafe).
 func ShortPath(p string) string {
 	home := paths.UserHome()
 	if home != "" && home != "/" {
@@ -41,18 +44,23 @@ func ShortPath(p string) string {
 			return "~"
 		}
 		if strings.HasPrefix(p, home+string(filepath.Separator)) {
-			return "~" + p[len(home):]
+			return "~" + termsafe.Escape(p[len(home):])
 		}
 	}
-	return p
+	return termsafe.Escape(p)
 }
 
 // oneLine collapses whitespace so multi-line commands fit in a row.
+//
+// Everything an agent, a tool or the daemon wrote goes through here or
+// through wrap before it is styled: the text is not ours, and a control
+// character in it must be shown (␛), never sent to the terminal, or the
+// command on screen is not the command that runs.
 func oneLine(s string) string {
-	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\n", " ⏎ ")
 	s = strings.ReplaceAll(s, "\t", " ")
-	return strings.TrimSpace(s)
+	return termsafe.Escape(strings.TrimSpace(s))
 }
 
 // fit truncates or right-pads s (which may contain ANSI) to exactly w cells.
@@ -87,7 +95,10 @@ func wrap(s string, w int) []string {
 		return nil
 	}
 	var out []string
-	for _, para := range strings.Split(strings.ReplaceAll(s, "\r", ""), "\n") {
+	for _, para := range strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n") {
+		// Escaped before wrapping (see oneLine), so the widths are those
+		// of what is drawn.
+		para = termsafe.Escape(strings.ReplaceAll(para, "\t", "    "))
 		out = append(out, strings.Split(ansi.Wrap(para, w, " /-"), "\n")...)
 	}
 	return out
@@ -100,7 +111,7 @@ func requestWhat(r api.Request) string {
 	case r.Command != "":
 		return "$ " + oneLine(r.Command)
 	case len(r.Paths) > 0:
-		s := r.Tool + " " + ShortPath(r.Paths[0])
+		s := oneLine(r.Tool) + " " + ShortPath(r.Paths[0])
 		if len(r.Paths) > 1 {
 			s += fmt.Sprintf(" +%d", len(r.Paths)-1)
 		}
@@ -108,14 +119,14 @@ func requestWhat(r api.Request) string {
 	case r.Summary != "":
 		return oneLine(r.Summary)
 	}
-	return r.Tool
+	return oneLine(r.Tool)
 }
 
 func agentName(a api.AgentKind) string {
 	if a == "" {
 		return "agent"
 	}
-	return string(a)
+	return oneLine(string(a))
 }
 
 // where is "<title> · <branch>" for a session.
@@ -134,6 +145,7 @@ func where(s *api.Session, cwd string) string {
 	if title == "" {
 		title = "?"
 	}
+	title, branch = oneLine(title), oneLine(branch)
 	if branch != "" {
 		return title + " · " + branch
 	}
@@ -142,9 +154,9 @@ func where(s *api.Session, cwd string) string {
 
 func shortID(id string) string {
 	if len(id) > 8 {
-		return id[:8]
+		id = id[:8]
 	}
-	return id
+	return termsafe.Escape(id)
 }
 
 // whereFit is where() for a column of w cells: when "title · branch"

@@ -705,13 +705,13 @@ func TestDecideClockSkewAndValidation(t *testing.T) {
 	if w := e.do("POST", path, map[string]any{"behavior": "allow"}, reqOpt{cookie: ck}); w.Code == 200 {
 		t.Fatal("unsigned decision accepted")
 	}
-	// Deny with a message works.
+	// Deny works (a message goes through the signed /respond instead:
+	// TestV1DecideTakesNoUnsignedMessage).
 	d := e.signed(k, "r_skew000001", api.BehaviorDeny, api.ScopeOnce)
-	d.Message = "use a PR"
 	if w := e.do("POST", path, d, reqOpt{cookie: ck}); w.Code != 200 {
 		t.Fatalf("deny: %d %s", w.Code, w.Body)
 	}
-	if ds := e.fc.Decisions(); len(ds) != 1 || ds[0].Message != "use a PR" {
+	if ds := e.fc.Decisions(); len(ds) != 1 || ds[0].Behavior != api.BehaviorDeny || ds[0].Message != "" {
 		t.Fatalf("decisions = %+v", ds)
 	}
 	// Unknown request.
@@ -943,21 +943,21 @@ func TestSSEResync(t *testing.T) {
 func TestActionTokens(t *testing.T) {
 	e := newEnv(t)
 	e.openRequest("r_action0001")
-	if u := e.srv.ActionURL("r_action0001", api.BehaviorAllow); u != "" {
+	if u := e.srv.DenyURL("r_action0001"); u != "" {
 		t.Fatalf("action URL without public URL: %q", u)
 	}
 	e.cfg.Web.PublicURL = "https://mac.tail1.ts.net"
 	e.srv.pubURL = normalizePublicURL(e.cfg.Web.PublicURL)
-	allow := e.srv.ActionURL("r_action0001", api.BehaviorAllow)
-	deny := e.srv.ActionURL("r_action0001", api.BehaviorDeny)
-	if !strings.HasPrefix(allow, "https://mac.tail1.ts.net/api/actions/") || allow == deny {
-		t.Fatalf("allow=%q deny=%q", allow, deny)
+	deny := e.srv.DenyURL("r_action0001")
+	other := e.srv.DenyURL("r_action0001")
+	if !strings.HasPrefix(deny, "https://mac.tail1.ts.net/api/actions/") || deny == other {
+		t.Fatalf("deny=%q other=%q", deny, other)
 	}
-	if e.srv.ActionURL("r_missing0001", api.BehaviorAllow) != "" || e.srv.ActionURL("r_action0001", api.BehaviorAsk) != "" {
-		t.Fatal("action URL for unknown request or bad behavior")
+	if e.srv.DenyURL("r_missing0001") != "" || e.srv.DenyURL("") != "" {
+		t.Fatal("action URL for an unknown request")
 	}
 	// Tokens are stored hashed.
-	tok := allow[strings.LastIndex(allow, "/")+1:]
+	tok := deny[strings.LastIndex(deny, "/")+1:]
 	var n int
 	_ = e.db.QueryRow(`SELECT COUNT(*) FROM web_action_tokens WHERE token_hash = ?`, tok).Scan(&n)
 	if n != 0 {
@@ -966,20 +966,20 @@ func TestActionTokens(t *testing.T) {
 	pathOf := func(u string) string { return strings.TrimPrefix(u, "https://mac.tail1.ts.net") }
 	host := reqOpt{host: "mac.tail1.ts.net", origin: "-", noCSRF: true}
 
-	if w := e.do("GET", pathOf(allow), nil, host); w.Code == 200 {
+	if w := e.do("GET", pathOf(deny), nil, host); w.Code == 200 {
 		t.Fatal("GET must not spend a token")
 	}
-	w := e.do("POST", pathOf(allow), nil, host)
+	w := e.do("POST", pathOf(deny), nil, host)
 	if w.Code != 200 {
 		t.Fatalf("action: %d %s", w.Code, w.Body)
 	}
-	if ds := e.fc.Decisions(); len(ds) != 1 || ds[0].By != "ntfy" || ds[0].Behavior != api.BehaviorAllow {
+	if ds := e.fc.Decisions(); len(ds) != 1 || ds[0].By != "ntfy" || ds[0].Behavior != api.BehaviorDeny {
 		t.Fatalf("decisions = %+v", ds)
 	}
-	if w := e.do("POST", pathOf(allow), nil, host); w.Code != 410 {
+	if w := e.do("POST", pathOf(deny), nil, host); w.Code != 410 {
 		t.Fatalf("reuse: %d", w.Code)
 	}
-	if w := e.do("POST", pathOf(deny), nil, host); w.Code != 410 {
+	if w := e.do("POST", pathOf(other), nil, host); w.Code != 410 {
 		t.Fatalf("sibling token after use: %d", w.Code)
 	}
 	if w := e.do("POST", "/api/actions/short", nil, host); w.Code != 404 {
@@ -988,7 +988,7 @@ func TestActionTokens(t *testing.T) {
 
 	// Tokens expire with their request.
 	e.openRequest("r_action0002")
-	late := e.srv.ActionURL("r_action0002", api.BehaviorDeny)
+	late := e.srv.DenyURL("r_action0002")
 	e.clock.Add(9*time.Minute + time.Second)
 	if w := e.do("POST", pathOf(late), nil, host); w.Code != 410 {
 		t.Fatalf("expired token: %d", w.Code)
@@ -996,8 +996,8 @@ func TestActionTokens(t *testing.T) {
 	// A token for a request answered elsewhere reports 409.
 	e.clock.Add(-(9*time.Minute + time.Second))
 	e.openRequest("r_action0003")
-	u := e.srv.ActionURL("r_action0003", api.BehaviorAllow)
-	_, _ = e.fc.Decide(context.Background(), api.Decision{RequestID: "r_action0003", Behavior: api.BehaviorDeny, By: "cli"})
+	u := e.srv.DenyURL("r_action0003")
+	_, _ = e.fc.Decide(context.Background(), api.Decision{RequestID: "r_action0003", Behavior: api.BehaviorAllow, By: "cli"})
 	if w := e.do("POST", pathOf(u), nil, host); w.Code != 409 {
 		t.Fatalf("answered elsewhere: %d", w.Code)
 	}

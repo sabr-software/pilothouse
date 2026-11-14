@@ -296,6 +296,11 @@ func (d *Daemon) saveSession(ctx context.Context, tx *store.Tx, before *api.Sess
 		typ = api.EventSessionStarted
 	case s.State == api.StateExited && before.State != api.StateExited:
 		typ = api.EventSessionExited
+		// "Allow for this session" ends here: a conversation resumed
+		// later asks again.
+		if err := tx.DeleteGrants(ctx, s.ID); err != nil {
+			return s, err
+		}
 	}
 	_, err = tx.Emit(ctx, typ, s.ID, "", s)
 	return s, err
@@ -364,7 +369,9 @@ func closeInTx(ctx context.Context, tx *store.Tx, id string, to api.RequestStatu
 func (d *Daemon) releaseHeld(ctx context.Context, reason string) {
 	for _, id := range d.waiters.ids() {
 		_, err := d.closeRequest(ctx, id, []api.RequestStatus{api.RequestOpen}, api.RequestSteppedAside)
-		if err != nil && !errors.Is(err, store.ErrAlreadyClosed) {
+		// Not found: a hook registered and has not stored its request yet;
+		// holdPermission checks again once it has.
+		if err != nil && !errors.Is(err, store.ErrAlreadyClosed) && !errors.Is(err, store.ErrNotFound) {
 			d.log.Warn("release held request", "request", id, "err", err)
 			continue
 		}

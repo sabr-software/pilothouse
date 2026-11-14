@@ -143,7 +143,9 @@ const res = await page.evaluate(async (c, id2) => {
   o.denySession = await post(id2, { behavior: 'deny', scope: 'session', ts: Date.now(), nonce: 'denysession123456789', sig: await sign(id2, 'deny', 'session', Date.now(), 'denysession123456789') });
   // Valid one, then exact replay.
   const now = Date.now();
-  const good = { behavior: 'deny', scope: 'once', message: 'sec test', ts: now, nonce: 'goodnonce12345678901', sig: await sign(id2, 'deny', 'once', now, 'goodnonce12345678901') };
+  const good = { behavior: 'deny', scope: 'once', ts: now, nonce: 'goodnonce12345678901', sig: await sign(id2, 'deny', 'once', now, 'goodnonce12345678901') };
+  // The v1 signature does not cover a message, so v1 takes none.
+  o.unsignedMessage = await post(id2, { ...good, message: 'sec test' });
   o.good = await post(id2, good);
   o.goodReplay = await post(id2, good);
   return o;
@@ -153,10 +155,11 @@ check('tampered behavior rejected', /^403 bad_signature/.test(res.flip), res.fli
 check('stale ts (−200 s) rejected', /^403 stale_signature/.test(res.stale), res.stale);
 check('future ts (+200 s) rejected', /^403 stale_signature/.test(res.future), res.future);
 check('deny+session rejected', /^400/.test(res.denySession), res.denySession);
+check('v1 decision with an unsigned message rejected', /^400 bad_request/.test(res.unsignedMessage), res.unsignedMessage);
 check('fresh signed deny accepted', /^200/.test(res.good), res.good);
 check('exact replay after success rejected', /^403 replayed/.test(res.goodReplay), res.goodReplay);
 const o2 = await readOut('sec2');
-check('hook got the signed deny with message', /"deny"/.test(o2) && /sec test/.test(o2), o2);
+check('hook got the signed deny, without the unsigned message', /"deny"/.test(o2) && !/sec test/.test(o2), o2);
 
 for (const l of [...page._logs]) console.log(l);
 await browser.close();

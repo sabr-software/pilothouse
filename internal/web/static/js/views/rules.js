@@ -219,7 +219,8 @@ export function rulesView() {
   }
 
   function revealHash() {
-    const id = decodeURIComponent(location.hash.slice(1));
+    let id = location.hash.slice(1);
+    try { id = decodeURIComponent(id); } catch { /* a bare %: the name as written */ }
     if (!id) return;
     const el = document.getElementById(id);
     if (!el) return;

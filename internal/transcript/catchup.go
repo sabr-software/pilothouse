@@ -66,10 +66,9 @@ func (f *feed) catchUp(since, now time.Time, extra CatchUpExtra) *api.CatchUp {
 				errorCount++
 				lastError = it.Summary
 			}
-			head := commandHead(it.command)
-			if name, end := runnerAt(testCommand, head); name != "" {
-				s := step{command: it.command, result: f.output(it), isError: it.IsError, pending: it.Pending}
-				lastTest = &test{name: name, at: it.At, status: s.checkStatus("tests", head, end)}
+			s := step{command: it.command, result: f.output(it), isError: it.IsError, pending: it.Pending, lost: it.lost}
+			if j, ok := worst(s.checks(), "tests"); ok {
+				lastTest = &test{name: j.name, at: it.At, status: j.status}
 			}
 			for _, e := range it.edits {
 				p := hookkit.RelPath(f.cwd, e.path)

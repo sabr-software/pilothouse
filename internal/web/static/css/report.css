@@ -192,7 +192,7 @@ svg.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 main.bare:has(.view.rep) { padding-bottom: 0; }
 
 @media (prefers-reduced-motion: reduce) {
-  .view.nav-push, .view.nav-back, .view.rep > *, .view.log .lgroup, .view.log .lfoot, .rbody > *, .vs, .stampw svg, .stampw::after, .slip-stamp, .req.stamped, .spin { animation: none !important; }
+  .view.nav-push, .view.nav-back, .view.rep > *, .view.log .lgroup, .view.log .lfoot, .rbody > *, .vs, .slip-stamp, .req.stamped, .spin { animation: none !important; }
   .req.ledger-dec.leaving { transition: none; }
 }
 
@@ -230,8 +230,7 @@ main.bare:has(.view.rep) { padding-bottom: 0; }
   .topbar.has-back .search-btn-top, .topbar.has-back .presence { display: none; }
 }
 /* After the first render, live updates replace content without replaying entrance animations. */
-.settled > *, .settled .stampw svg, .settled .stampw::after, .settled .vs { animation: none !important; }
-.settled .stampw::after { opacity: 0; }
+.settled > *, .settled .vs { animation: none !important; }
 
 /* "Open in herdr / Terminal" (desktop.js) */
 .rhead .desk-btn { margin-top: 12px; gap: 6px; }

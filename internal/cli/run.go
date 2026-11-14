@@ -298,7 +298,7 @@ func newTaskNewCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "task %s (%s) started\n  worktree: %s\n  branch:   %s (from %s)\n  session:  %s\n",
-				t.ID, t.Title, t.Worktree, t.Branch, t.BaseRef, t.SessionID)
+				oneLineText(t.ID), oneLineText(t.Title), oneLineText(t.Worktree), oneLineText(t.Branch), oneLineText(t.BaseRef), oneLineText(t.SessionID))
 			if !attach {
 				fmt.Fprintf(out, "attach: pilothouse attach %s · review: pilothouse task diff %s\n", t.SessionID, t.ID)
 				return nil
@@ -324,6 +324,7 @@ func newTaskLsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			forPrint(&views) // titles come from prompts, states from the daemon
 			out := cmd.OutOrStdout()
 			shown := 0
 			tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
@@ -388,7 +389,13 @@ func newTaskDiffCmd() *cobra.Command {
 		Short: "Show what a task changed relative to its base (committed and uncommitted)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return newTaskManager(cmd).Diff(cmd.Context(), args[0], stat, cmd.OutOrStdout())
+			// The patch quotes whatever the agent wrote to its files.
+			out, done := rawOut(cmd.OutOrStdout())
+			if err := newTaskManager(cmd).Diff(cmd.Context(), args[0], stat, out); err != nil {
+				_ = done()
+				return err
+			}
+			return done()
 		},
 	}
 	cmd.Flags().BoolVar(&stat, "stat", false, "show a diffstat instead of the patch")
@@ -410,7 +417,7 @@ changes or the agent is still running, unless --force.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "task %s (%s) done; branch %s kept\n", t.ID, t.Title, t.Branch)
+			fmt.Fprintf(cmd.OutOrStdout(), "task %s (%s) done; branch %s kept\n", oneLineText(t.ID), oneLineText(t.Title), oneLineText(t.Branch))
 			return nil
 		},
 	}
@@ -431,7 +438,7 @@ func newTaskAbandonCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "task %s (%s) abandoned\n", t.ID, t.Title)
+			fmt.Fprintf(cmd.OutOrStdout(), "task %s (%s) abandoned\n", oneLineText(t.ID), oneLineText(t.Title))
 			return nil
 		},
 	}

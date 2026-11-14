@@ -339,10 +339,20 @@ func (f *FakeCore) MarkSeen(_ context.Context, sessionID string) error {
 	return nil
 }
 
+// requestID expands an id or unique prefix, as the daemon does for the
+// command line. Call with f.mu held.
+func (f *FakeCore) requestID(id string) string {
+	keys := map[string]bool{}
+	for k := range f.requests {
+		keys[k] = true
+	}
+	return f.find(keys, id)
+}
+
 func (f *FakeCore) Request(_ context.Context, id string) (api.Request, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if r, ok := f.requests[id]; ok {
+	if r, ok := f.requests[f.requestID(id)]; ok {
 		return r, nil
 	}
 	return api.Request{}, core.ErrNotFound
@@ -352,6 +362,7 @@ func (f *FakeCore) Request(_ context.Context, id string) (api.Request, error) {
 func (f *FakeCore) Decide(_ context.Context, d api.Decision) (api.Request, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	d.RequestID = f.requestID(d.RequestID)
 	r, ok := f.requests[d.RequestID]
 	if !ok {
 		return api.Request{}, core.ErrNotFound

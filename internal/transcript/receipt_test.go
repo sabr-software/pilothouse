@@ -108,7 +108,7 @@ func TestCheckRunners(t *testing.T) {
 		"cargo clippy -- -D warnings":       {"", "cargo clippy", ""},
 		"ls src":                            {"", "", ""},
 	} {
-		got := [3]string{testRunner(cmd), lintRunner(cmd), buildRunner(cmd)}
+		got := [3]string{runnerOf("tests", cmd), runnerOf("lint", cmd), runnerOf("build", cmd)}
 		if got != want {
 			t.Errorf("%q → %q, want %q", cmd, got, want)
 		}

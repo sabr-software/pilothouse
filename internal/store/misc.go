@@ -25,6 +25,14 @@ func (tx *Tx) InsertGrant(ctx context.Context, g api.Grant) error {
 	return nil
 }
 
+// DeleteGrants removes a session's grants: they end with the session.
+func (tx *Tx) DeleteGrants(ctx context.Context, sessionID string) error {
+	if _, err := tx.q.ExecContext(ctx, `DELETE FROM grants WHERE session_id = ?`, sessionID); err != nil {
+		return fmt.Errorf("delete grants: %w", err)
+	}
+	return nil
+}
+
 // Grants returns a session's grants, oldest first.
 func (r Reader) Grants(ctx context.Context, sessionID string) ([]api.Grant, error) {
 	rows, err := r.q.QueryContext(ctx,

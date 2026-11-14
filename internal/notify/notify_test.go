@@ -406,11 +406,11 @@ func (p *fakePusher) Push(_ context.Context, n core.Notification) error {
 	p.pushed = append(p.pushed, n)
 	return nil
 }
-func (p *fakePusher) ActionURL(id string, b api.Behavior) string {
+func (p *fakePusher) DenyURL(id string) string {
 	if p.public == "" {
 		return ""
 	}
-	return p.public + "/api/actions/tok-" + id + "-" + string(b)
+	return p.public + "/api/actions/tok-" + id + "-deny"
 }
 func (p *fakePusher) BaseURL() string   { return p.public }
 func (p *fakePusher) PublicURL() string { return p.public }
@@ -459,9 +459,13 @@ func TestNtfy(t *testing.T) {
 	if h.Get("Priority") != "high" || h.Get("Tags") != "lock" || h.Get("Authorization") != "Bearer tk_abc" || h.Get("Click") != "https://mac.tail1.ts.net/r/r_abc" {
 		t.Errorf("headers = %v", h)
 	}
-	want := "http, Allow, https://mac.tail1.ts.net/api/actions/tok-r_abc-allow, method=POST, clear=true; " +
-		"http, Deny, https://mac.tail1.ts.net/api/actions/tok-r_abc-deny, method=POST, clear=true; " +
-		"view, Open, https://mac.tail1.ts.net/r/r_abc"
+	// Allowing is signed in the app, so the notification links there; only
+	// Deny is a one-tap action.
+	want := "view, Open, https://mac.tail1.ts.net/r/r_abc; " +
+		"http, Deny, https://mac.tail1.ts.net/api/actions/tok-r_abc-deny, method=POST, clear=true"
+	if strings.Contains(h.Get("Actions"), "Allow") {
+		t.Errorf("ntfy offers a one-tap Allow: %q", h.Get("Actions"))
+	}
 	if h.Get("Actions") != want {
 		t.Errorf("Actions = %q", h.Get("Actions"))
 	}

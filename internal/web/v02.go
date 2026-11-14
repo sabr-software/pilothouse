@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -108,6 +109,9 @@ func (s *Server) handleRespond(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if !s.wholeRequest(w, r, id) {
+		return
+	}
 	req, err := s.d.Core.Decide(r.Context(), api.Decision{
 		RequestID: id,
 		Behavior:  b.Behavior,
@@ -148,6 +152,9 @@ func (s *Server) handleReply(w http.ResponseWriter, r *http.Request) {
 		return
 	case len(b.Text) > MaxReplyBytes || !utf8.ValidString(b.Text):
 		writeErr(w, http.StatusBadRequest, "bad_request", "message is too long")
+		return
+	}
+	if !s.wholeSession(w, r, id) {
 		return
 	}
 	res, err := rep.Reply(r.Context(), id, b, by(r))
@@ -449,6 +456,16 @@ func (s *Server) handleFinishTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if b.Action != "ship" && b.Action != "discard" {
 		writeErr(w, http.StatusBadRequest, "bad_request", "action must be ship or discard")
+		return
+	}
+	// A task is found by id prefix too; the signature names one task.
+	all, err := tr.Tasks(r.Context())
+	if err != nil {
+		s.writeCoreErr(w, err)
+		return
+	}
+	if !slices.ContainsFunc(all, func(t api.Task) bool { return t.ID == id }) {
+		writeErr(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}
 	t, err := tr.FinishTask(r.Context(), id, b, by(r))

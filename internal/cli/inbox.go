@@ -37,6 +37,7 @@ import (
 	"github.com/sabr-software/pilothouse/internal/paths"
 	"github.com/sabr-software/pilothouse/internal/presence"
 	"github.com/sabr-software/pilothouse/internal/service"
+	"github.com/sabr-software/pilothouse/internal/termsafe"
 	"github.com/sabr-software/pilothouse/internal/tui"
 	"github.com/sabr-software/pilothouse/internal/version"
 	"github.com/sabr-software/pilothouse/internal/wrap"
@@ -328,12 +329,14 @@ func newLsCmd() *cobra.Command {
 }
 
 func inboxJSON(w io.Writer, v any) error {
-	enc := json.NewEncoder(w)
+	enc := json.NewEncoder(jsonOut(w))
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
 }
 
 func printLs(w io.Writer, out lsOutput, allSessions []api.Session, live map[string]bool) {
+	forPrint(&out)
+	forPrint(&allSessions)
 	now := inboxNow()
 	byID := map[string]api.Session{}
 	for _, s := range allSessions {
@@ -415,8 +418,9 @@ func inboxWhere(s api.Session, cwd string) string {
 	if title == "" || title == "." {
 		title = "?"
 	}
+	title = oneLineText(title)
 	if s.Branch != "" {
-		return title + " · " + s.Branch
+		return title + " · " + oneLineText(s.Branch)
 	}
 	return title
 }
@@ -429,7 +433,7 @@ func inboxRequestWhat(r api.Request) string {
 	case r.Command != "":
 		return "$ " + oneLineText(r.Command)
 	case len(r.Paths) > 0:
-		s := r.Tool + " " + tui.ShortPath(r.Paths[0])
+		s := oneLineText(r.Tool) + " " + tui.ShortPath(r.Paths[0])
 		if len(r.Paths) > 1 {
 			s += fmt.Sprintf(" +%d", len(r.Paths)-1)
 		}
@@ -437,11 +441,13 @@ func inboxRequestWhat(r api.Request) string {
 	case r.Summary != "":
 		return oneLineText(r.Summary)
 	}
-	return r.Tool
+	return oneLineText(r.Tool)
 }
 
+// oneLineText is text that isn't ours as one printable line: white space
+// collapsed, control characters shown (␛) instead of sent to the terminal.
 func oneLineText(s string) string {
-	return strings.Join(strings.Fields(s), " ")
+	return termsafe.Line(s)
 }
 
 func inboxClip(s string, n int) string {
@@ -545,6 +551,7 @@ func runInboxDecide(cmd *cobra.Command, ref string, body api.DecideBody) error {
 		out = req
 	}
 	w := cmd.OutOrStdout()
+	forPrint(&req) // answered: from here on it is only shown
 	what := inboxRequestWhat(req)
 	switch {
 	case askDecidedLine(w, req, body):
@@ -617,7 +624,7 @@ func newLogCmd() *cobra.Command {
 					if err != nil {
 						return err
 					}
-					_, err = fmt.Fprintln(w, string(b))
+					_, err = fmt.Fprintln(w, string(termsafe.JSON(b)))
 					return err
 				}
 				_, err := fmt.Fprintln(w, FormatEventLine(ev))
@@ -679,7 +686,8 @@ func FormatEventLine(ev api.Event) string {
 	if sid == "" {
 		sid = "-"
 	}
-	return fmt.Sprintf("%s  %-8s  %s", ts, sid, describeEvent(ev))
+	// One line per event, whatever the event carries.
+	return fmt.Sprintf("%s  %-8s  %s", ts, oneLineText(sid), oneLineText(describeEvent(ev)))
 }
 
 func describeEvent(ev api.Event) string {
@@ -818,6 +826,7 @@ func newExplainCmd() *cobra.Command {
 }
 
 func printExplain(w io.Writer, ex api.Explain) {
+	forPrint(&ex)
 	s := ex.Session
 	now := inboxNow()
 	fmt.Fprintf(w, "%s  %s · %s (%s)\n\n", s.ID, s.Agent, inboxWhere(s, ""), s.Mode)
@@ -874,6 +883,7 @@ func newPresenceCmds() []*cobra.Command {
 				if err != nil {
 					return inboxErr(err, "")
 				}
+				forPrint(&p)
 				fmt.Fprintln(cmd.OutOrStdout(), presenceSentence(p))
 				return nil
 			},
@@ -960,7 +970,7 @@ func newServiceCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("the service is installed but the daemon didn't answer: %w — check %s", err, service.LogFile())
 			}
-			fmt.Fprintf(w, "✓ daemon running (pid %d, %s)\n", h.PID, h.Version)
+			fmt.Fprintf(w, "✓ daemon running (pid %d, %s)\n", h.PID, oneLineText(h.Version))
 			return nil
 		},
 	}
@@ -1384,7 +1394,7 @@ func runSetup(cmd *cobra.Command, yes, noPhone bool) error {
 	if h, err := client.New().Health(ctx); err == nil {
 		running = true
 		if h.Version != version.Version {
-			fmt.Fprintf(w, "  ! a daemon is running version %s; this binary is %s\n", h.Version, version.Version)
+			fmt.Fprintf(w, "  ! a daemon is running version %s; this binary is %s\n", oneLineText(h.Version), version.Version)
 		}
 	}
 	mgr := inboxServiceMgr(exe)
@@ -1425,10 +1435,10 @@ func runSetup(cmd *cobra.Command, yes, noPhone bool) error {
 	h, err := waitForHealth(ctx, inboxHealthWait)
 	daemonOK := err == nil
 	if daemonOK {
-		fmt.Fprintf(w, "  ✓ daemon running (pid %d, %s)\n", h.PID, h.Version)
+		fmt.Fprintf(w, "  ✓ daemon running (pid %d, %s)\n", h.PID, oneLineText(h.Version))
 		note("✓ daemon running")
 	} else {
-		fmt.Fprintf(w, "  ✗ the daemon isn't answering: %v\n", err)
+		fmt.Fprintf(w, "  ✗ the daemon isn't answering: %s\n", errLine(err))
 		note("✗ daemon not running — see `pilothouse doctor`")
 	}
 
@@ -1455,7 +1465,7 @@ func runSetup(cmd *cobra.Command, yes, noPhone bool) error {
 				fmt.Fprintln(w, "  ! restart the daemon to use ntfy: `pilothouse stop && pilothouse start`")
 			}
 			if _, err := waitForHealth(ctx, inboxHealthWait); err != nil {
-				fmt.Fprintf(w, "  ✗ the daemon isn't answering after the restart: %v\n", err)
+				fmt.Fprintf(w, "  ✗ the daemon isn't answering after the restart: %s\n", errLine(err))
 			}
 		}
 		paired = pairedDevices(ctx, daemonOK)
@@ -1466,7 +1476,7 @@ func runSetup(cmd *cobra.Command, yes, noPhone bool) error {
 	fmt.Fprintln(w, "Notifications")
 	if daemonOK {
 		if err := inboxClient().NotifyTest(ctx); err != nil {
-			fmt.Fprintf(w, "  ! test notification failed: %v\n", inboxErr(err, ""))
+			fmt.Fprintf(w, "  ! test notification failed: %s\n", errLine(inboxErr(err, "")))
 			note("! test notification failed")
 		} else {
 			if ch := notifyChannels(ctx); len(ch) > 0 {
@@ -1628,7 +1638,7 @@ func setupPair(ctx context.Context, ui *setupUI, w io.Writer, note func(string))
 	}
 	p, err := c.Pair(ctx)
 	if err != nil {
-		fmt.Fprintf(w, "  ✗ pairing: %v\n", rmtErr(err, "pairing"))
+		fmt.Fprintf(w, "  ✗ pairing: %s\n", errLine(rmtErr(err, "pairing")))
 		return
 	}
 	rmtPrintPair(w, p, true)
@@ -1639,7 +1649,7 @@ func setupPair(ctx context.Context, ui *setupUI, w io.Writer, note func(string))
 		for _, d := range ds {
 			if !known[d.ID] && d.RevokedAt == nil {
 				fmt.Fprintf(w, "  ✓ Paired %q. Turn on notifications in its Settings tab.\n", d.Name)
-				note("✓ paired " + d.Name)
+				note("✓ paired " + oneLineText(d.Name))
 				return
 			}
 		}
@@ -1725,6 +1735,7 @@ func newDoctorCmd() *cobra.Command {
 }
 
 func printDoctor(w io.Writer, checks []doctorCheck) {
+	forPrint(&checks) // a check quotes the daemon, files and other programs
 	width := 0
 	for _, c := range checks {
 		width = max(width, len([]rune(c.Name)))

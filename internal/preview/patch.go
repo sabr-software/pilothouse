@@ -122,14 +122,16 @@ func parsePatch(s string) []patchFile {
 // applyHunks applies an update to content the way Codex does: each hunk's
 // anchor line, then its old lines, are found from where the previous hunk
 // ended, matching exactly, then ignoring trailing, then all surrounding
-// whitespace. ok is false when a hunk doesn't apply.
+// whitespace. ok is false when a hunk doesn't apply, or when finding where
+// they go takes more than maxSeekSteps.
 func applyHunks(content string, hunks []patchHunk) (string, bool) {
 	lines, eol := splitText(content)
 	var out []string
 	pos := 0
+	left := maxSeekSteps
 	for _, h := range hunks {
 		if h.anchor != "" {
-			i := seek(lines, pos, []string{h.anchor}, false)
+			i := seek(lines, pos, []string{h.anchor}, false, &left)
 			if i < 0 {
 				return "", false
 			}
@@ -147,7 +149,7 @@ func applyHunks(content string, hunks []patchHunk) (string, bool) {
 		}
 		at := len(lines)
 		if len(old) > 0 {
-			if at = seek(lines, pos, old, h.eof); at < 0 {
+			if at = seek(lines, pos, old, h.eof, &left); at < 0 {
 				return "", false
 			}
 		}
@@ -163,9 +165,16 @@ func applyHunks(content string, hunks []patchHunk) (string, bool) {
 	return s, true
 }
 
+// maxSeekSteps is how many line comparisons placing one file's hunks may
+// take. A real patch needs a few per line of the file; one whose lines
+// repeat (a long run of blank lines, say) needs lines × hunk length, which
+// is minutes for a file the preview would otherwise read in full.
+const maxSeekSteps = 4 << 20
+
 // seek finds want in lines at or after pos (preferring the end of the file
-// for an "End of File" hunk).
-func seek(lines []string, pos int, want []string, eof bool) int {
+// for an "End of File" hunk). Each comparison is taken from left, and when
+// that runs out the answer is the same as not found.
+func seek(lines []string, pos int, want []string, eof bool, left *int) int {
 	for _, eq := range []func(a, b string) bool{
 		func(a, b string) bool { return a == b },
 		func(a, b string) bool { return strings.TrimRight(a, " \t") == strings.TrimRight(b, " \t") },
@@ -173,7 +182,7 @@ func seek(lines []string, pos int, want []string, eof bool) int {
 	} {
 		match := func(i int) bool {
 			for j, w := range want {
-				if !eq(lines[i+j], w) {
+				if *left--; *left < 0 || !eq(lines[i+j], w) {
 					return false
 				}
 			}
@@ -184,7 +193,7 @@ func seek(lines []string, pos int, want []string, eof bool) int {
 				return i
 			}
 		}
-		for i := pos; i+len(want) <= len(lines); i++ {
+		for i := pos; i+len(want) <= len(lines) && *left >= 0; i++ {
 			if match(i) {
 				return i
 			}

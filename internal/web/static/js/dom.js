@@ -83,6 +83,10 @@ export function sync(el, ...kids) {
     }
   };
   flat(kids);
+  // Take out what is leaving first: otherwise the nodes after a removed one
+  // are moved up past it, and moving a node drops the focus inside it.
+  const keep = new Set(nodes);
+  for (const c of [...el.childNodes]) if (!keep.has(c)) c.remove();
   nodes.forEach((n, i) => {
     const at = el.childNodes[i];
     if (at !== n) el.insertBefore(n, at || null);

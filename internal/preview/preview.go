@@ -226,11 +226,16 @@ type file struct {
 }
 
 func (b *builder) isPrivate(p string) bool {
-	if risk.IsSecretPath(p, b.home) {
+	// Also with case folded: on macOS and Windows .ENV opens .env and
+	// ~/.SSH is ~/.ssh. Where case does count, a file called .ENV loses
+	// its context lines, which is the right side to be wrong on.
+	low := strings.ToLower(p)
+	if risk.IsSecretPath(p, b.home) || risk.IsSecretPath(low, strings.ToLower(b.home)) {
 		return true
 	}
 	for _, r := range b.private {
-		if p == r || strings.HasPrefix(p, r+"/") {
+		r = strings.ToLower(r)
+		if low == r || strings.HasPrefix(low, r+"/") {
 			return true
 		}
 	}
@@ -322,22 +327,28 @@ type change struct {
 }
 
 // applyChanges applies edits in order the way the tools do. ok is false
-// when one doesn't apply (stale input, or an old string not in the file).
-func applyChanges(content string, cs []change) (string, bool) {
+// when one doesn't apply (stale input, or an old string not in the file),
+// and when the result would be too big to diff, which big also says.
+func applyChanges(content string, cs []change) (after string, ok, big bool) {
 	for _, c := range cs {
 		old, nw := normalize(c.old), normalize(c.new)
 		switch {
 		case old == "" && content == "":
 			content = nw
 		case old == "" || !strings.Contains(content, old):
-			return "", false
+			return "", false, false
 		case c.all:
+			// A replace_all multiplies, so its size is worked out before
+			// it is built: a short input can ask for hundreds of megabytes.
+			if len(content)+strings.Count(content, old)*(len(nw)-len(old)) > maxDiffInput {
+				return "", false, true
+			}
 			content = strings.ReplaceAll(content, old, nw)
 		default:
 			content = strings.Replace(content, old, nw, 1)
 		}
 	}
-	return content, true
+	return content, true, false
 }
 
 func (b *builder) edits(path string, cs []change) {
@@ -351,13 +362,15 @@ func (b *builder) edits(path string, cs []change) {
 		fp.Op = api.FileCreate
 	}
 	if f.readable && !f.binary {
-		if after, ok := applyChanges(normalize(f.content), cs); ok {
+		after, ok, big := applyChanges(normalize(f.content), cs)
+		if ok {
 			diffFile(&fp, f.content, after)
 			b.add(fp)
 			return
 		}
+		fp.Truncated = big // below is each change once, not every place it lands
 	} else if !f.exists {
-		if after, ok := applyChanges("", cs); ok {
+		if after, ok, _ := applyChanges("", cs); ok {
 			diffFile(&fp, "", after)
 			b.add(fp)
 			return

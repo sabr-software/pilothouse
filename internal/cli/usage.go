@@ -19,6 +19,7 @@ import (
 
 	"github.com/sabr-software/pilothouse/internal/api"
 	"github.com/sabr-software/pilothouse/internal/client"
+	"github.com/sabr-software/pilothouse/internal/termsafe"
 )
 
 // Seams for tests.
@@ -54,7 +55,7 @@ Pilothouse has no price for counts tokens but no cost.`,
 				return inboxErr(err, "")
 			}
 			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc := json.NewEncoder(jsonOut(cmd.OutOrStdout()))
 				enc.SetIndent("", "  ")
 				return enc.Encode(in)
 			}
@@ -68,6 +69,7 @@ Pilothouse has no price for counts tokens but no cost.`,
 }
 
 func printUsage(w io.Writer, in api.Insights) {
+	forPrint(&in)
 	n := len(in.Days)
 	fmt.Fprintf(w, "Usage, last %d day%s (cost at API prices, not what a subscription charges)\n\n", n, usgPlural(n))
 	if in.Total == (api.Usage{}) {
@@ -297,12 +299,12 @@ func runActivity(ctx context.Context, w io.Writer, ref string, limit int, follow
 		return inboxErr(err, ref)
 	}
 	if asJSON && !follow {
-		enc := json.NewEncoder(w)
+		enc := json.NewEncoder(jsonOut(w))
 		enc.SetIndent("", "  ")
 		return enc.Encode(act)
 	}
 	if !act.Available {
-		fmt.Fprintln(w, usgFirstLine(act.Note, "No activity to show."))
+		fmt.Fprintln(w, oneLineText(usgFirstLine(act.Note, "No activity to show.")))
 		return nil
 	}
 	p := &activityPrinter{w: w, json: asJSON, shown: map[string]bool{}}
@@ -313,7 +315,7 @@ func runActivity(ctx context.Context, w io.Writer, ref string, limit int, follow
 		}
 		fmt.Fprintf(w, "Since %s:\n", since)
 		for _, l := range act.CatchUp.Lines {
-			fmt.Fprintf(w, "  • %s\n", l)
+			fmt.Fprintf(w, "  • %s\n", oneLineText(l))
 		}
 		fmt.Fprintln(w)
 	}
@@ -374,7 +376,7 @@ func (p *activityPrinter) print(it api.ActivityItem) {
 	p.shown[it.ID] = it.Pending
 	if p.json {
 		b, _ := json.Marshal(it)
-		fmt.Fprintln(p.w, string(b))
+		fmt.Fprintln(p.w, string(termsafe.JSON(b)))
 		return
 	}
 	if p.turn != 0 && it.Turn != p.turn && !seen {
@@ -437,7 +439,7 @@ func printActivityFooter(w io.Writer, act api.Activity) {
 			s += " · ~" + usgMoney(u.CostUSD)
 		}
 		if u.Model != "" {
-			s += " (" + u.Model + ")"
+			s += " (" + oneLineText(u.Model) + ")"
 		}
 		fmt.Fprintf(w, "\nUsage  %s\n", s)
 	}
@@ -448,7 +450,7 @@ func printActivityFooter(w io.Writer, act api.Activity) {
 			added += f.Added
 			removed += f.Removed
 			if i < 5 {
-				names = append(names, fmt.Sprintf("%s (+%d/−%d)", f.Path, f.Added, f.Removed))
+				names = append(names, fmt.Sprintf("%s (+%d/−%d)", oneLineText(f.Path), f.Added, f.Removed))
 			}
 		}
 		more := ""
@@ -458,7 +460,7 @@ func printActivityFooter(w io.Writer, act api.Activity) {
 		fmt.Fprintf(w, "Files  %d changed (+%d/−%d): %s%s\n", len(act.Files), added, removed, strings.Join(names, ", "), more)
 	}
 	if act.Note != "" {
-		fmt.Fprintf(w, "Note   %s\n", act.Note)
+		fmt.Fprintf(w, "Note   %s\n", oneLineText(act.Note))
 	}
 }
 

@@ -87,9 +87,9 @@ func runAnswer(cmd *cobra.Command, ref string, given []string) error {
 	if out.Decision != nil && len(out.Decision.Answers) > 0 {
 		answers = out.Decision.Answers // as the daemon stored them
 	}
-	fmt.Fprintf(w, "✓ Answered %s:\n", req.ID)
+	fmt.Fprintf(w, "✓ Answered %s:\n", oneLineText(req.ID))
 	for _, q := range req.Questions {
-		fmt.Fprintf(w, "  %s → %s\n", oneLineText(q.Text), answers[q.Key()])
+		fmt.Fprintf(w, "  %s → %s\n", oneLineText(q.Text), oneLineText(answers[q.Key()]))
 	}
 	return nil
 }
@@ -134,18 +134,18 @@ func optionByNumber(q api.Question, s string) (string, bool) {
 // printQuestions lists a question request's questions with numbered
 // options, the way `pilothouse answer` reads them.
 func printQuestions(w io.Writer, r api.Request) {
-	fmt.Fprintf(w, "%s asks:\n", r.ID)
+	fmt.Fprintf(w, "%s asks:\n", oneLineText(r.ID))
 	for i, q := range r.Questions {
 		head := fmt.Sprintf("  %d. %s", i+1, oneLineText(q.Text))
 		if q.Header != "" {
-			head += "  [" + q.Header + "]"
+			head += "  [" + oneLineText(q.Header) + "]"
 		}
 		if q.MultiSelect {
 			head += "  (choose any: comma-separated)"
 		}
 		fmt.Fprintln(w, head)
 		for j, o := range q.Options {
-			line := fmt.Sprintf("       %d) %s", j+1, o.Label)
+			line := fmt.Sprintf("       %d) %s", j+1, oneLineText(o.Label))
 			if o.Description != "" {
 				line += " — " + inboxClip(oneLineText(o.Description), 80)
 			}
@@ -248,7 +248,7 @@ func askWhat(r api.Request) (string, bool) {
 		if len(q.Options) > 0 {
 			labels := make([]string, len(q.Options))
 			for i, o := range q.Options {
-				labels[i] = o.Label
+				labels[i] = oneLineText(o.Label)
 			}
 			s += " [" + strings.Join(labels, " | ") + "]"
 		}
@@ -257,7 +257,7 @@ func askWhat(r api.Request) (string, bool) {
 		}
 		return s, true
 	case api.CheckpointPlan:
-		return "Plan: " + strings.TrimPrefix(strings.TrimPrefix(r.Summary, "Plan ready"), ": "), true
+		return "Plan: " + oneLineText(strings.TrimPrefix(strings.TrimPrefix(r.Summary, "Plan ready"), ": ")), true
 	}
 	return "", false
 }

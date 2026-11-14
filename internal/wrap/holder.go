@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -90,6 +91,7 @@ type Holder struct {
 
 	ptyWrite sync.Mutex // serialises input from successive clients
 	conns    sync.WaitGroup
+	oscOwed  atomic.Int64 // OSC 7501 queries not answered yet
 
 	openMu sync.Mutex
 	open   map[net.Conn]struct{} // every connection, so shutdown can close those still in their hello
@@ -420,16 +422,27 @@ func (h *Holder) pump() {
 // holder is the agent's terminal as far as status goes, whatever terminal
 // is attached (or none). Claude Code reports status only after this reply.
 // The write happens off the pump goroutine, which must never block on
-// PTY input.
+// PTY input. One goroutine writes every answer that is owed: an agent
+// that asks again and again without reading its input fills the PTY, and
+// a goroutine per query would then be one stuck goroutine per query.
 func (h *Holder) answerOSCQuery() {
+	if h.oscOwed.Add(1) > 1 {
+		return // the goroutine below has not finished and will answer this one too
+	}
 	go func() {
-		h.ptyWrite.Lock()
-		defer h.ptyWrite.Unlock()
-		if _, err := h.ptmx.Write([]byte(QueryReply)); err != nil {
-			h.log.Debug("answer OSC 7501 query", "err", err)
-			return
+		for {
+			h.ptyWrite.Lock()
+			_, err := h.ptmx.Write([]byte(QueryReply))
+			h.ptyWrite.Unlock()
+			if err != nil {
+				h.log.Debug("answer OSC 7501 query", "err", err)
+			} else {
+				h.log.Debug("answered OSC 7501 query")
+			}
+			if h.oscOwed.Add(-1) == 0 {
+				return
+			}
 		}
-		h.log.Debug("answered OSC 7501 query")
 	}()
 }
 

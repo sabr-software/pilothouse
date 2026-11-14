@@ -404,6 +404,160 @@ function kindOf(r) {
   return r.checkpoint === 'question' ? 'question' : r.checkpoint === 'plan' ? 'plan' : 'permission';
 }
 
+// The headline of a shell request must be about the whole line. An agent
+// writes the command, so `rm -rf ~ && git commit -m wip` must never read
+// "Commit?": only a line that is certainly ONE command is named after it.
+//
+// shellCommands reads a line the way sh splits it, as far as it can be
+// sure: [[word, …], …], one list per command, or null when the line
+// substitutes a command, opens a subshell, or uses quoting, a comment or a
+// here-document this does not follow. Where shells differ it takes the
+// reading with more commands in it.
+const QUIET_HEREDOC = /\$\(cat <<'([A-Za-z_]+)'\n/y;
+
+// `"$(cat <<'EOF' … EOF )"`, the usual way to pass a commit message: the
+// text is literal and only cat runs. Returns the index after its ")", or
+// -1. The text may hold nothing an older shell would read as the end of
+// the substitution: no quotes, backslashes, backticks, `$`, or a ")"
+// without its "(".
+function quietHeredoc(c, at) {
+  QUIET_HEREDOC.lastIndex = at;
+  const m = QUIET_HEREDOC.exec(c);
+  if (!m) return -1;
+  const from = at + m[0].length;
+  const end = c.indexOf('\n' + m[1] + '\n', from - 1);
+  if (end < 0) return -1;
+  let depth = 0;
+  for (let i = from; i < end; i++) {
+    const ch = c[i];
+    if (ch === "'" || ch === '"' || ch === '\\' || ch === '`' || ch === '$') return -1;
+    if (ch === '(') depth++;
+    else if (ch === ')' && --depth < 0) return -1;
+  }
+  if (depth) return -1;
+  let i = end + m[1].length + 2;
+  while (c[i] === ' ' || c[i] === '\t') i++;
+  return c[i] === ')' ? i + 1 : -1;
+}
+
+function shellCommands(c) {
+  const cmds = [];
+  let words = [];
+  let word = null; // null: between words
+  let plain = ''; // the character before, when it stood for itself
+  const n = c.length;
+  const endWord = () => { if (word !== null) { words.push(word); word = null; } };
+  const endCommand = () => { endWord(); if (words.length) { cmds.push(words); words = []; } };
+  for (let i = 0; i < n; i++) {
+    const ch = c[i];
+    const next = c[i + 1];
+    const prev = plain;
+    plain = '';
+    if (ch === ' ' || ch === '\t') { endWord(); continue; }
+    if (ch === '\n' || ch === '\r' || ch === ';') { endCommand(); continue; }
+    if (ch === '|') { if (next === '|' || next === '&') i++; endCommand(); continue; }
+    if (ch === '&') {
+      // `2>&1` and `&>file` are redirections; `&` and `&&` end a command.
+      if (next === '>' || prev === '>' || prev === '<') { word = (word || '') + ch; continue; }
+      if (next === '&') i++;
+      endCommand();
+      continue;
+    }
+    if (ch === '`' || ch === '(' || ch === ')') return null;
+    if (ch === '$' && (next === "'" || next === '"' || next === '{')) return null; // $'…' and ${…} quote by their own rules
+    if (ch === '#' && word === null) return null; // a comment: quotes in it are not quotes
+    if (ch === '<' && next === '<') return null; // a here-document: nor in its text
+    if (ch === '\\') {
+      if (i + 1 >= n) return null;
+      i++;
+      if (next !== '\n') word = (word || '') + next;
+      continue;
+    }
+    if (ch === "'") {
+      const j = c.indexOf("'", i + 1);
+      if (j < 0) return null;
+      word = (word || '') + c.slice(i + 1, j);
+      i = j;
+      continue;
+    }
+    if (ch === '"') {
+      let j = i + 1;
+      word = word || '';
+      for (;;) {
+        if (j >= n) return null;
+        const d = c[j];
+        if (d === '"') break;
+        if (d === '`' || (d === '$' && c[j + 1] === '{')) return null;
+        if (d === '$' && c[j + 1] === '(') {
+          j = quietHeredoc(c, j);
+          if (j < 0) return null;
+          word += '…';
+          continue;
+        }
+        if (d === '\\') {
+          const e = c[j + 1];
+          if (e === undefined) return null;
+          if (e === '$' || e === '`' || e === '"' || e === '\\') word += e;
+          else if (e !== '\n') word += d + e;
+          j += 2;
+          continue;
+        }
+        word += d;
+        j++;
+      }
+      i = j;
+      continue;
+    }
+    word = (word || '') + ch;
+    plain = ch;
+  }
+  endCommand();
+  return cmds;
+}
+
+const RM_R_RE = /\brm\s+(?:-\S+\s+)*-(?:-recursive\b|[a-zA-Z]*[rR])/;
+const RUNNERS = new Set(['sudo', 'env', 'time', 'npx', 'pnpx', 'bunx']);
+const PACKAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
+const PUSH_NOT_ONE_BRANCH = new Set(['--all', '--branches', '--mirror', '--tags', '--delete', '-d', '--prune']);
+
+function shellTitle(c, risky) {
+  const all = shellCommands(c);
+  // `cd there && …` only says where; the rest is still the whole of it.
+  let cmds = all;
+  while (cmds && cmds.length > 1 && cmds[0][0] === 'cd' && cmds[0].length <= 2) cmds = cmds.slice(1);
+  const deletes = RM_R_RE.test(c) || risky('destructive');
+  if (!cmds || cmds.length !== 1) {
+    if (deletes) return 'Delete files?';
+    if (risky('deploy')) return 'Deploy?';
+    if (risky('sudo')) return 'Run as root?';
+    return all && all.length > 1 ? `Run ${all.length} commands?` : 'Run a command?';
+  }
+  // One command: the program, after `VAR=…` and the likes of sudo and npx.
+  let w = cmds[0];
+  while (w.length > 1 && (RUNNERS.has(w[0]) || /^[A-Za-z_]\w*=/.test(w[0]))) w = w.slice(1);
+  const prog = w[0];
+  if (prog === 'git') {
+    let i = 1;
+    while (i < w.length && w[i][0] === '-') i += (w[i] === '-C' || w[i] === '-c') ? 2 : 1;
+    if (w[i] === 'push') {
+      const args = w.slice(i + 1);
+      const refs = args.filter((a) => a[0] !== '-');
+      const to = refs.length === 2 ? refs[1].slice(refs[1].lastIndexOf(':') + 1) : '';
+      const verb = risky('force_push') ? 'Force-push' : 'Push';
+      // Named only when it is one branch, and not a push that deletes.
+      return to && /^[\w./-]+$/.test(to) && !risky('destructive') && !args.some((a) => PUSH_NOT_ONE_BRANCH.has(a)) ? `${verb} to ${to}?` : `${verb}?`;
+    }
+    if (w[i] === 'commit') return 'Commit?';
+  }
+  if (w[1] === 'publish' && (prog === 'cargo' || (PACKAGERS.has(prog) && prog !== 'bun'))) return 'Publish a package?';
+  if (deletes) return 'Delete files?';
+  if (risky('deploy')) return 'Deploy?';
+  if ((PACKAGERS.has(prog) && (w[1] === 'i' || w[1] === 'install' || w[1] === 'add')) || (/^pip3?$/.test(prog) && w[1] === 'install') ||
+    (prog === 'brew' && w[1] === 'install') || (prog === 'go' && w[1] === 'get') || (prog === 'cargo' && w[1] === 'add')) return 'Install packages?';
+  if (risky('sudo')) return 'Run as root?';
+  return !prog || prog[0] === '-' ? 'Run a command?' : `Run ${basename(prog)}?`;
+}
+
 /** What a request asks, as a question a person would ask. */
 /** What a session is doing when only its terminal can answer it. */
 export function terminalWords(s) {
@@ -424,19 +578,7 @@ export function askTitle(r) {
     return t ? `Review plan: ${t}` : 'Review a plan';
   }
   const risky = (code) => (r.risk || []).some((x) => x.code === code);
-  if (r.tool_kind === 'shell' && r.command) {
-    const c = r.command.trim();
-    const push = c.match(/\bgit\s+push\b(?:\s+(?:-\S+\s+)*\S+\s+(?:\S+:)?([\w./-]+))?/);
-    if (push) return push[1] ? `Push to ${push[1]}?` : 'Push?';
-    if (/\bgit\s+commit\b/.test(c)) return 'Commit?';
-    if (/\b(?:npm|pnpm|yarn)\s+publish\b|\bcargo\s+publish\b/.test(c)) return 'Publish a package?';
-    if (risky('deploy')) return 'Deploy?';
-    if (/\brm\s+-\w*r/.test(c) || risky('destructive')) return 'Delete files?';
-    if (/\b(?:npm|pnpm|yarn|bun)\s+(?:i|install|add)\b|\bpip3?\s+install\b|\bbrew\s+install\b|\bgo\s+get\b|\bcargo\s+add\b/.test(c)) return 'Install packages?';
-    if (risky('sudo')) return 'Run as root?';
-    const prog = basename(c.replace(/^(?:sudo|env|time|npx|pnpx|bunx)\s+/, '').split(/\s+/)[0] || 'it');
-    return `Run ${prog}?`;
-  }
+  if (r.tool_kind === 'shell' && r.command) return shellTitle(r.command.trim(), risky);
   if (r.tool_kind === 'edit') {
     if (risky('deploy') || risky('protected_branch')) return 'Edit a production file?';
     const p = (r.preview && r.preview.files && r.preview.files[0] && r.preview.files[0].path) || (r.paths && r.paths[0]);

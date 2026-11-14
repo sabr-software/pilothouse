@@ -152,6 +152,18 @@ Path conveniences:
 - A **relative** path pattern matches at any depth: `.env` means `**/.env`,
   `*.pem` means `**/*.pem`, `src/**` means `**/src/**`. Start the pattern
   with `/` or `~/` to anchor it.
+- A rule is about the file, not the spelling. On macOS, `path`, `cwd` and
+  `repo` patterns ignore letter case, as the file system does
+  (`SECRETS/prod.key` matches `secrets/**`). Symlinks are resolved: a
+  **deny or ask** rule holds when either the path the call used or the file
+  it resolves to matches. An **allow** rule must match the resolved file,
+  so allowing `lib/**` does not allow `lib/link/x` where `link` points
+  somewhere else. A pattern whose own directories are a symlink (`/tmp/**`
+  on macOS) covers both spellings.
+- When a call names several files, a deny or ask rule needs one of them to
+  match; an allow rule needs all of them to.
+- In `when:`, `paths` holds the path as the call wrote it and, when it goes
+  through a symlink, the resolved path as well.
 
 Examples:
 
@@ -284,6 +296,10 @@ Session grants ("allow for this session" answers) are applied by the daemon
 after deny and ask rules, so they can never override a deny or an ask. When
 a rule asks every time, the app says so instead of offering the button.
 
+A grant lasts as long as its session. When the agent exits, its grants are
+gone; resuming the same conversation later starts without them and asks
+again.
+
 A grant is judged part by part, so it survives the next chained line. For
 `cd web && git status | head; sed -n 1,80p src/a.ts`:
 
@@ -293,9 +309,28 @@ A grant is judged part by part, so it survives the next chained line. For
   and similar) share one grant, "reading files in this folder". It covers
   reads inside the session's repo only: not `~/.ssh`, not `../other`, not
   `.env`. Options that write or run something (`sed -i`, `find -delete`,
-  `find -exec`, `sort -o`, `rg --pre`) aren't covered.
+  `find -exec`, `sort -o`, `rg --pre`) aren't covered, nor are brace lists
+  and globs that can reach outside the folder (`cat {/etc/passwd,a}`,
+  `cat .*/x`).
 - Anything else needs its command key (`git status`), or that exact part,
   granted.
+
+A grant never covers more than the command you were shown. It uses the
+command key (`git push` for `git push origin main`) only for programs
+Pilothouse knows to have subcommands (`git`, `npm`, `go`, `cargo`, `kubectl`,
+`docker`, `make` and similar). In these cases the grant is the exact
+command, and a later command is asked about again unless it is identical:
+
+- any other program: its second word may be an argument (`rm build`,
+  `ssh host`, `cp a b`), so allowing `rm build` doesn't allow another `rm`;
+- an option that changes what runs or where: `git -c core.pager=…`,
+  `git -C` or `--git-dir` outside the folder, `make -f`, `docker -H`,
+  `kubectl --context`, `npm --registry`;
+- a riskier use of the same subcommand: allowing `git push` doesn't allow
+  `git push --force`, and allowing `git reset` doesn't allow
+  `git reset --hard`;
+- an argument that names a path outside the session's folder;
+- `sudo`, `env` and `NAME=value` prefixes.
 
 These always reach a person, whatever was granted: `$(…)` and backticks,
 writes through a redirection (`>`, `>>`), `sudo`, `xargs`, `env` and
@@ -587,8 +622,21 @@ simple command actually runs. It sees through:
   without `-i`, `sort` without `-o`, `find` without `-delete/-exec`, …)
   given a protected path — including `cp`, `mv`, `rm`, `tee`, `ln`,
   `chmod`, `dd of=`, `sqlite3`, editors, and `curl --unix-socket` to the
-  Pilothouse socket. `cd` earlier in the line is followed, and `~`, `$HOME` and
-  `$PILOTHOUSE_HOME` are expanded.
+  Pilothouse socket. `cd` earlier in the line is followed (so are `env -C`
+  and `sudo -D`), and `~`, `$HOME` and `$PILOTHOUSE_HOME` are expanded;
+- what the shell expands: globs and brace lists (`rm ~/.pilot*/policy.yaml`,
+  `rm ~/.pilot{house,x}/keys`) and variables set earlier on the same line
+  (`D=~/.pilothouse; rm $D/policy.yaml`). A glob is compared with the
+  literal protected paths by spelling, and with the protected globs by
+  what it names on disk right now, so `rm -rf dist/*` in a repo is not a
+  question but `rm *.json` beside an `opencode.json` is. As in a shell, `*`
+  and `?` skip dot files unless the line turns on `dotglob`. A pattern too
+  wide to check (more than 50,000 directory entries, or more than 256
+  brace alternatives) is a question;
+- whole directories: `rm -r`, `mv` and `chmod|chown|chgrp -R` on a directory
+  that holds a protected file that exists (`mv ~/.claude ~/.claude.bak`,
+  `rm -rf ~`, `rm -rf .claude` in the repo). The message says which file
+  the directory holds.
 
 For edit tools the target paths are resolved through symlinks.
 
@@ -605,7 +653,11 @@ admin invocation or a protected path.
 What it does not catch (and why the socket check exists): commands assembled
 at run time (`a=ask; ${a}gate approve`, `printf` tricks), a copied or renamed
 binary, scripts in files (`bash ./x.sh`), interpreter code that builds paths
-dynamically, other users' homes, and anything outside the tool call itself.
+dynamically, variables set outside the command line and command
+substitutions used as paths (`rm $(echo ~/.pilothouse)/policy.yaml`), a
+parent directory removed by a tool other than `rm`, `mv` and `chmod -R`
+(`rsync --delete`, `find -delete` from above it), other users' homes, and
+anything outside the tool call itself.
 
 ## Reloading and errors
 

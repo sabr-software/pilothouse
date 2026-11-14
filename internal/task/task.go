@@ -213,7 +213,7 @@ func (m *Manager) Prepare(ctx context.Context, o NewOptions) (*Prepared, error) 
 	p := &Prepared{opts: o, agentPath: agentPath, kind: wrap.KindFromCommand(o.Agent), top: top, repo: mainRepoRoot(ctx, top)}
 
 	p.base = o.Base
-	if p.base == "" {
+	if p.base == "" || p.base == "HEAD" {
 		if p.base, err = gitOutput(ctx, top, "symbolic-ref", "--quiet", "--short", "HEAD"); err != nil {
 			if p.base, err = gitOutput(ctx, top, "rev-parse", "HEAD"); err != nil {
 				return nil, errors.New("the repository has no commits yet — commit something first, or pass --base")
@@ -227,9 +227,9 @@ func (m *Manager) Prepare(ctx context.Context, o NewOptions) (*Prepared, error) 
 	if err != nil {
 		return nil, fmt.Errorf("base %q is not a commit, branch or tag in %s", p.base, p.repo)
 	}
-	if strings.ContainsAny(p.base, "~^@:{}") {
+	if strings.ContainsAny(p.base, "~^@:{}") || !sharedRef(ctx, top, p.base) {
 		// The base is reused later (diff, ship) from the task's worktree,
-		// where HEAD~2 would mean something else: pin it.
+		// where HEAD~2 or ORIG_HEAD would mean something else: pin it.
 		p.base = sha
 	}
 
@@ -240,6 +240,26 @@ func (m *Manager) Prepare(ctx context.Context, o NewOptions) (*Prepared, error) 
 		p.trusted, p.trustErr = RepoTrusted(p.repo)
 	}
 	return p, nil
+}
+
+// sharedRef reports whether name is the same commit from every worktree of
+// the repository: a branch, a tag, a remote branch or a commit id. HEAD,
+// ORIG_HEAD, FETCH_HEAD and the like belong to the worktree they are read
+// in, so the task's worktree has its own.
+func sharedRef(ctx context.Context, dir, name string) bool {
+	full, err := gitOutput(ctx, dir, "rev-parse", "--symbolic-full-name", name)
+	if err != nil {
+		return false
+	}
+	if full == "" {
+		return true // not a ref: a commit id
+	}
+	for _, p := range []string{"refs/heads/", "refs/tags/", "refs/remotes/"} {
+		if strings.HasPrefix(full, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckRef refuses a base that git could read as an option, or that no
@@ -662,6 +682,13 @@ func (m *Manager) Done(ctx context.Context, ref string, o DoneOptions) (api.Task
 	}
 	wt := dirExists(t.Worktree)
 	if wt {
+		if !o.Keep {
+			// Not even with --force: that discards uncommitted changes,
+			// and these are commits.
+			if err := checkOnBranch(ctx, t); err != nil {
+				return t, err
+			}
+		}
 		dirty, err := hasLeftovers(ctx, t) // task.yaml's copies don't count
 		if err != nil {
 			return t, err
@@ -694,9 +721,10 @@ func (m *Manager) Done(ctx context.Context, ref string, o DoneOptions) (api.Task
 }
 
 // Close finishes a task that has nothing to ship. It refuses when the
-// branch has commits beyond its base or the worktree has uncommitted
-// changes, so a no-op close can never throw work away. The agent is
-// stopped, the worktree removed and the branch kept.
+// branch has commits beyond its base, or the worktree has uncommitted
+// changes or is not on the branch (its commits are then where the branch
+// does not see them), so a no-op close can never throw work away. The
+// agent is stopped, the worktree removed and the branch kept.
 func (m *Manager) Close(ctx context.Context, ref string) (api.Task, error) {
 	t, err := m.Get(ref)
 	if err != nil {
@@ -706,6 +734,9 @@ func (m *Manager) Close(ctx context.Context, ref string) (api.Task, error) {
 		return t, fmt.Errorf("task %s is %s, not ready for review", t.ID, t.Status)
 	}
 	if dirExists(t.Worktree) {
+		if err := checkOnBranch(ctx, t); err != nil {
+			return t, err
+		}
 		dirty, err := hasLeftovers(ctx, t)
 		if err != nil {
 			return t, err

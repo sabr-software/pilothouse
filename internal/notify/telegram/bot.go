@@ -195,7 +195,7 @@ func (b *Bot) sendRequest(ctx context.Context, chat int64, n core.Notification) 
 	defer b.sendMu.Unlock()
 	r := *n.Request
 	st := answerState{Answers: map[string]string{}}
-	text := fitRequest(n, st, b.o.Now())
+	text := fitRequest(n, st, b.o.Now(), b.allowNote(*n.Request))
 	if n.Linked {
 		// From a linked machine: only a paired device can answer it there.
 		_, err := b.send(ctx, SendMessage{ChatID: chat, Text: text + "\n\n<i>Answer in the Pilothouse app.</i>"})
@@ -217,6 +217,10 @@ func (b *Bot) sendRequest(ctx context.Context, chat int64, n core.Notification) 
 		return err
 	}
 	return b.db.bind(ctx, data, chat, m.MessageID)
+}
+
+func (b *Bot) allowNote(r api.Request) string {
+	return allowNote(r, b.o.Decisions, appURL(b.o.PublicURL()))
 }
 
 // keyboard mints tokens for a request's buttons. It returns nil (no
@@ -292,7 +296,7 @@ func (b *Bot) refresh(ctx context.Context, chat, messageID int64, r api.Request,
 	if s, err := b.o.Core.Session(ctx, r.SessionID); err == nil {
 		sess = &s
 	}
-	text := fitRequest(core.Notification{Kind: core.NotifyRequest, Request: &r, Session: sess}, st, b.o.Now())
+	text := fitRequest(core.Notification{Kind: core.NotifyRequest, Request: &r, Session: sess}, st, b.o.Now(), b.allowNote(r))
 	kb, data, err := b.keyboard(ctx, chat, r, st)
 	if err != nil {
 		return err
@@ -346,11 +350,18 @@ func (b *Bot) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			b.Handle(ctx, u)
+			// An update is handled to the end even when the bot is being
+			// stopped (the daemon restarts it when its settings change). A
+			// button press spends its token first: cut off halfway, the
+			// answer would be lost and the redelivered press refused as
+			// already used.
+			hctx, done := context.WithTimeout(context.WithoutCancel(ctx), handleTimeout)
+			b.Handle(hctx, u)
 			offset = u.UpdateID + 1
-			if err := b.db.setOffset(ctx, offset); err != nil {
+			if err := b.db.setOffset(hctx, offset); err != nil {
 				b.log.Warn("telegram: save offset", "err", err)
 			}
+			done()
 		}
 		b.maybePrune(ctx)
 	}
@@ -419,7 +430,7 @@ func (b *Bot) maybePair(ctx context.Context, m *Message) {
 
 func (b *Bot) decisionsNote() string {
 	if b.o.Decisions {
-		return " with buttons to answer them, and you can reply to a “finished” message to send that agent a follow-up"
+		return " with buttons to deny them or answer a question (allowing opens the app, where your device signs it), and you can reply to a “finished” message to send that agent a follow-up"
 	}
 	return " (notify only: answering from Telegram is turned off)"
 }
@@ -455,7 +466,7 @@ func (b *Bot) onMessage(ctx context.Context, m *Message) {
 func (b *Bot) help() string {
 	s := "Pilothouse sends requests here when you're away from " + esc(b.o.Machine) + "."
 	if b.o.Decisions {
-		s += "\n• Tap the buttons on a request to answer it.\n• Reply to a “finished” message to send that agent a follow-up."
+		s += "\n• Deny a request or answer a question with its buttons. Allowing opens the app, where your device signs it.\n• Reply to a “finished” message to send that agent a follow-up."
 	} else {
 		s += "\n• Answering from Telegram is turned off (notify.telegram.decisions: false)."
 	}
@@ -684,14 +695,13 @@ func (b *Bot) onCallback(ctx context.Context, q *CallbackQuery) {
 	st := parseState(m.State)
 
 	switch {
-	case action == "allow":
-		b.decide(ctx, q, r, st, api.Decision{Behavior: api.BehaviorAllow, Scope: api.ScopeOnce})
-	case action == "session":
-		b.decide(ctx, q, r, st, api.Decision{Behavior: api.BehaviorAllow, Scope: api.ScopeSession})
+	case action == "allow" || action == "session" || action == "approve":
+		// Buttons sent before 0.4.15. An approval is signed by a paired
+		// device, so it happens in the app.
+		b.answer(ctx, q, approveInApp, true)
+		b.keepButtons(ctx, chat, msgID, r, st)
 	case action == "deny":
 		b.decide(ctx, q, r, st, api.Decision{Behavior: api.BehaviorDeny})
-	case action == "approve":
-		b.decide(ctx, q, r, st, api.Decision{Behavior: api.BehaviorAllow})
 	case action == "changes":
 		b.askForChanges(ctx, q, r, st)
 	case strings.HasPrefix(action, "opt:") || strings.HasPrefix(action, "done:"):
@@ -716,7 +726,19 @@ func (b *Bot) keepButtons(ctx context.Context, chat, msgID int64, r api.Request,
 	}
 }
 
+// approveInApp answers a press that would allow a tool or approve a plan.
+// handleTimeout bounds one update's handling once the bot was told to stop.
+const handleTimeout = 30 * time.Second
+
+const approveInApp = "Open the Pilothouse app to allow this: an approval is signed by your device."
+
 func (b *Bot) decide(ctx context.Context, q *CallbackQuery, r api.Request, st answerState, d api.Decision) {
+	// The one place Telegram answers a request: it never approves.
+	if d.Behavior != api.BehaviorDeny && (approves(r) || len(d.Answers) == 0 || d.Scope == api.ScopeSession) {
+		b.answer(ctx, q, approveInApp, true)
+		b.keepButtons(ctx, q.Message.Chat.ID, q.Message.MessageID, r, st)
+		return
+	}
 	d.RequestID, d.By, d.At = r.ID, b.by(), b.o.Now().UTC()
 	out, err := b.o.Core.Decide(ctx, d)
 	if err != nil {

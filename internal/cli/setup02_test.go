@@ -35,6 +35,7 @@ type f2Bot struct {
 	sent    []string
 	calls   []string
 	reject  bool // getMe answers 401
+	badSend bool // sendMessage answers 400, like unparseable HTML does
 }
 
 func newF2Bot(t *testing.T) *f2Bot {
@@ -45,7 +46,7 @@ func newF2Bot(t *testing.T) *f2Bot {
 		w.Header().Set("Content-Type", "application/json")
 		b.mu.Lock()
 		b.calls = append(b.calls, method)
-		reject := b.reject
+		reject, badSend := b.reject, b.badSend
 		b.mu.Unlock()
 		if tok != f2Token || reject {
 			w.WriteHeader(401)
@@ -85,6 +86,11 @@ func newF2Bot(t *testing.T) *f2Bot {
 			b.mu.Lock()
 			b.sent = append(b.sent, s.Text)
 			b.mu.Unlock()
+			if badSend {
+				w.WriteHeader(400)
+				_, _ = w.Write([]byte(`{"ok":false,"error_code":400,"description":"Bad Request: can't parse entities"}`))
+				return
+			}
 			ok(telegram.Message{MessageID: 9, Chat: telegram.Chat{ID: 4242}})
 		default:
 			ok(true)
@@ -376,7 +382,7 @@ func TestNotifyNtfy(t *testing.T) {
 }
 
 // Security review 0.2: an agent must not be able to point notifications
-// (and their one-tap Allow URLs) or Telegram decisions at itself.
+// (and their one-tap Deny URLs) or Telegram decisions at itself.
 func TestNotifyGuard(t *testing.T) {
 	ibxEnv(t)
 	notifySelfCheck = func() error { return errors.New("refused: run from inside claude") }
@@ -696,5 +702,49 @@ func TestDemoTailscale(t *testing.T) {
 	if !demoPortTaken([]byte(`{"TCP":{"8443":{"HTTPS":true}}}`), 8443) || demoPortTaken([]byte(`{"TCP":{"443":{}}}`), 8443) ||
 		!demoPortTaken([]byte(`{"Web":{"mac.tail1.ts.net:8443":{}}}`), 8443) {
 		t.Fatal("demoPortTaken")
+	}
+}
+
+// The welcome message is HTML: a machine name with markup characters must
+// be escaped, or Telegram rejects the message.
+func TestTelegramWelcomeEscapesMachineName(t *testing.T) {
+	ibxEnv(t)
+	bot := newF2Bot(t)
+	f2Config(t, func(c *config.Config) {
+		c.Notify.Telegram.APIBase = bot.URL
+		c.Machine = "R&D <studio>"
+	})
+	a := f2Start(context.Background(), f2Token+"\n", "notify", "telegram", "--no-qr")
+	bot.start(a.waitOut(t, startRE))
+	if err := a.wait(t); err != nil {
+		t.Fatalf("%v\n%s", err, a.out())
+	}
+	bot.mu.Lock()
+	welcome := strings.Join(bot.sent, "\n")
+	bot.mu.Unlock()
+	if !strings.Contains(welcome, "Connected to R&amp;D &lt;studio&gt;.") {
+		t.Fatalf("machine name not escaped: %q", welcome)
+	}
+}
+
+// A welcome message that doesn't go through is said, not swallowed; the
+// pairing itself is already saved and stays.
+func TestTelegramWelcomeFailureIsReported(t *testing.T) {
+	ibxEnv(t)
+	bot := newF2Bot(t)
+	bot.badSend = true
+	f2Config(t, func(c *config.Config) { c.Notify.Telegram.APIBase = bot.URL })
+	a := f2Start(context.Background(), f2Token+"\n", "notify", "telegram", "--no-qr")
+	bot.start(a.waitOut(t, startRE))
+	if err := a.wait(t); err != nil {
+		t.Fatalf("%v\n%s", err, a.out())
+	}
+	out := a.out()
+	ibxContains(t, out, "! Paired, but the welcome message didn't go through", "can't parse entities", "/status")
+	if strings.Contains(out, f2Token) {
+		t.Fatal("the token was echoed")
+	}
+	if cfg, _ := config.Load(); !cfg.Notify.Telegram.Enabled || cfg.Notify.Telegram.ChatID != 4242 {
+		t.Fatalf("pairing lost: %+v", cfg.Notify.Telegram)
 	}
 }

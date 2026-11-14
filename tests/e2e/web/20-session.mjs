@@ -15,8 +15,13 @@ await run(async () => {
   const apiR = await router(page, sse);
   const w = F.world();
   const TOTAL = 450;
+  let webReceipt = null; // what the turn's checks say, once a test sets it
   F.mount(apiR, w, {
     activity: {
+      s_web01: (url) => {
+        const a = url.searchParams.get('cursor') ? F.activityWebNext(w) : F.activityWeb(w);
+        return { json: webReceipt ? { ...a, receipt: webReceipt } : a };
+      },
       // A long history: 15 items to a turn; only the newest `limit` come back.
       s_api02: (url) => {
         if (url.searchParams.get('cursor')) return { json: { session_id: 's_api02', available: true, items: [], cursor: 'L' + TOTAL } };
@@ -79,7 +84,8 @@ await run(async () => {
   check('API error shown on its own', t3.includes('Overloaded'));
   check('subagent run grouped', !!(await turn3.$('.vs.sub')) && t3.includes('helper agent') && t3.includes('2 steps'));
   check('finished subagent group starts folded', !t3.includes('Find tests/e2e/web/*.mjs'));
-  await tap(page, await turn3.$('.vs.sub .vbtn'));
+  // By selector: opening the turn redraws its steps, and tap finds the button again.
+  await tap(page, '.earlier > details.eturn .vs.sub .vbtn');
   await sleep(150);
   const sub = await page.$eval('.earlier > details.eturn .vs.sub', (e) => e.innerText);
   check('subagent group opens to its steps and finish line', sub.includes('tests/e2e/web/*.mjs') && sub.includes('Explore finished'), sub.replace(/\s+/g, ' ').slice(0, 160));
@@ -129,6 +135,42 @@ await run(async () => {
   check('refused reply: clock hint shown, text kept', await waitText(page, 'clock is off', 3000, '.toast') && (await page.$eval('#reply-text', (e) => e.value)) === 'keep me');
   apiR.on('POST', /^\/api\/sessions\/s_web01\/reply$/, () => ({ json: { via: 'terminal' } }));
   await page.$eval('#reply-text', (e) => { e.value = ''; e.dispatchEvent(new Event('input')); });
+
+  // Words typed while a reply is on its way stay in the box.
+  apiR.on('POST', /^\/api\/sessions\/s_web01\/reply$/, () => ({ delay: 1200, json: { via: 'terminal' } }));
+  await page.type('#reply-text', 'Run the linter too.');
+  await tap(page, '.reply-send');
+  await page.waitForFunction(() => document.querySelector('.reply-send').innerText.includes('Sending'), { timeout: 3000 }).catch(() => {});
+  await page.type('#reply-text', ' And then');
+  await waitText(page, 'Sent', 4000, '.toast');
+  await page.waitForFunction(() => !document.querySelector('.reply-send').innerText.includes('Sending'), { timeout: 4000 }).catch(() => {});
+  check('text typed while a reply is sending is kept, without the part that was sent', (await page.$eval('#reply-text', (e) => e.value)) === 'And then', await page.$eval('#reply-text', (e) => e.value));
+  check('…and can be sent next', !(await page.$eval('.reply-send', (b) => b.disabled)));
+  apiR.on('POST', /^\/api\/sessions\/s_web01\/reply$/, () => ({ json: { via: 'terminal' } }));
+  await page.$eval('#reply-text', (e) => { e.value = ''; e.dispatchEvent(new Event('input')); });
+
+  // ---- A second visit shows this visit's checks, on the request too ----
+  const rcAt = new Date(Date.now() - 2 * 60e3).toISOString();
+  const rcBase = { turn: 4, since: rcAt, searches: 1, reads: 2, edits: 2, files: 2, added: 12, removed: 3, blocked: 0, failed: 0 };
+  const goTest = { name: 'go test', command: 'go test -race ./...', at: rcAt, status: 'passed', fresh: true, count: 31 };
+  const proofBox = '.sess article.req .thisturn';
+  const revisit = async () => {
+    await go(page, '/');
+    await page.waitForSelector('main .g-need', { timeout: 5000 }).catch(() => {});
+    await go(page, '/s/s_web01');
+    await page.waitForSelector('.act-feed', { timeout: 8000 }).catch(() => {});
+  };
+  webReceipt = { ...rcBase, tests: goTest };
+  await revisit();
+  check('revisit: the request shows what this turn proved', await waitText(page, 'Tests passed', 4000, proofBox), await text(page, proofBox));
+  webReceipt = { ...rcBase, tests: { ...goTest, status: 'failed', count: 0 } };
+  await revisit();
+  check('revisit after the tests broke: the request says so, not what the last visit saw', await waitText(page, 'Tests failed', 4000, proofBox) && !(await text(page, proofBox)).includes('Tests passed'), await text(page, proofBox));
+  // A check that arrives without its command (the next poll brings it) still gets a row.
+  webReceipt = { ...rcBase, tests: goTest, lint: { name: 'staticcheck', at: rcAt, status: 'passed', fresh: true } };
+  const rows = await page.waitForFunction(() => document.querySelectorAll('.checks .rchk').length === 2, { timeout: 8000 }).then(() => true, () => false);
+  check('a check without its command still gets a row', rows && (await text(page, '.checks')).includes('staticcheck'), page._logs.filter((l) => l.includes('pageerror')).join(' | ').slice(0, 200));
+  webReceipt = null;
 
   // ---- The `r` shortcut focuses the reply box ----
   await page.evaluate(() => { if (document.activeElement) document.activeElement.blur(); scrollTo(0, 0); });

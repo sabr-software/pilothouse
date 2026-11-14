@@ -8,7 +8,10 @@ import "strings"
 
 // ShellCommand is one simple command of a shell line.
 type ShellCommand struct {
-	Words     []string // quotes and escapes removed
+	Words []string // quotes and escapes removed
+	// Globs[i]: Words[i] has an unquoted *, ?, [ or {, or starts with an
+	// unquoted ~: the shell may expand it into names not written here.
+	Globs     []bool
 	Redirects []ShellRedirect
 	PipedIn   bool // stdin comes from the previous command of a pipeline
 	// Vars: a word or redirection target expands a parameter ($X, ${X},
@@ -20,6 +23,7 @@ type ShellCommand struct {
 type ShellRedirect struct {
 	Op     string // ">", ">>", ">|", "&>", "&>>", "<", "<>", "<<", "<<-", "<<<", ">&", "<&"
 	Target string // file, fd number, here-document delimiter or here-string text
+	Glob   bool   // Target has an unquoted glob, brace or leading ~
 	Body   string // here-document text (Op "<<" or "<<-")
 	// Expands: the here-document's delimiter was unquoted, so the shell
 	// expands parameters and runs substitutions in Body.
@@ -40,9 +44,9 @@ func ParseShell(s string) ShellLine {
 	p := parseShellDocs(s)
 	out := ShellLine{Commands: make([]ShellCommand, len(p.cmds)), Subs: p.subs}
 	for i, c := range p.cmds {
-		sc := ShellCommand{Words: c.words, PipedIn: c.pipedIn, Vars: c.vars}
+		sc := ShellCommand{Words: c.words, Globs: c.globs, PipedIn: c.pipedIn, Vars: c.vars}
 		for _, r := range c.redirs {
-			sc.Redirects = append(sc.Redirects, ShellRedirect{Op: r.op, Target: r.target, Body: r.body, Expands: r.expands})
+			sc.Redirects = append(sc.Redirects, ShellRedirect{Op: r.op, Target: r.target, Glob: r.glob, Body: r.body, Expands: r.expands})
 		}
 		out.Commands[i] = sc
 	}

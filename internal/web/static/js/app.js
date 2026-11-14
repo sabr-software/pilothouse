@@ -87,11 +87,25 @@ function navigate(path, replace = false) {
   render(path);
 }
 
+/** A path in this app, or '' — "//host/x" and "/\\host/x" start with a slash and are another site. */
+function ownPath(url) {
+  if (typeof url !== 'string' || !url.startsWith('/')) return '';
+  try {
+    const u = new URL(url, location.origin);
+    return u.origin === location.origin ? u.pathname + u.search + u.hash : '';
+  } catch {
+    return '';
+  }
+}
+
 function registerSW() {
   if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
   navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((e) => console.warn('service worker:', e));
   navigator.serviceWorker.addEventListener('message', (e) => {
-    if (e.data && e.data.type === 'navigate' && typeof e.data.url === 'string' && e.data.url.startsWith('/')) navigate(e.data.url);
+    if (e.data && e.data.type === 'navigate') {
+      const to = ownPath(e.data.url);
+      if (to) navigate(to);
+    }
     if (e.data && e.data.type === 'decided') toast(e.data.text, e.data.ok ? 'ok' : 'bad');
   });
 }
@@ -156,16 +170,25 @@ async function keyState() {
       state = !rec ? 'missing' : rec.spki && want && rec.spki !== want ? 'mismatch' : 'ok';
     } catch { state = 'missing'; }
   }
-  store.keyMismatch = state === 'mismatch';
-  store.keyMissing = state !== 'ok';
-  refreshChrome();
+  keyKnown(state === 'mismatch', state !== 'ok');
   return state;
 }
 
-addEventListener('pilothouse:nokey', (e) => {
-  store.keyMissing = true;
-  if (e.detail && e.detail.mismatch) store.keyMismatch = true;
+/**
+ * Records what is known about this browser's key and tells whatever shows
+ * it. The key is read after the first draw, so a view that is already on
+ * screen (Settings) hears about it here.
+ */
+function keyKnown(mismatch, missing) {
+  const changed = store.keyMismatch !== mismatch || store.keyMissing !== missing;
+  store.keyMismatch = mismatch;
+  store.keyMissing = missing;
   refreshChrome();
+  if (changed) dispatchEvent(new CustomEvent('pilothouse:keystate'));
+}
+
+addEventListener('pilothouse:nokey', (e) => {
+  keyKnown(store.keyMismatch || !!(e.detail && e.detail.mismatch), true);
 });
 
 // The daemon upgrades behind an app that stays open for days. On resume,
@@ -197,7 +220,11 @@ async function boot() {
     if (location.hash.length > 1 && (location.pathname === '/pair' || location.pathname === '/login')) location.reload();
   });
   const path = location.pathname;
-  const code = (path === '/pair' || path === '/login') ? decodeURIComponent(location.hash.slice(1)).trim() : '';
+  let code = '';
+  if (path === '/pair' || path === '/login') {
+    // A fragment that isn't URL-encoded text ("#%zz") is no code.
+    try { code = decodeURIComponent(location.hash.slice(1)).trim(); } catch { code = ''; }
+  }
   if (code) history.replaceState(null, '', path); // never keep the code in history
 
   if ((path === '/pair' || path === '/login') && code) {

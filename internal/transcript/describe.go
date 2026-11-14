@@ -68,15 +68,6 @@ func describe(agent api.AgentKind, tool string, input json.RawMessage, cwd strin
 // "Tests: npm test passed". The match is the runner as people say it.
 var testCommand = regexp.MustCompile(`(?:^|[\s;&|(])((?:npm|pnpm|yarn|bun)(?:\s+run)?\s+test(?::[\w-]+)?|go\s+test|cargo\s+(?:test|nextest)|python3?\s+-m\s+(?:pytest|unittest)|pytest|jest|vitest|mocha|rspec|(?:bundle\s+exec\s+)?rake\s+(?:test|spec)|mvn(?:w)?\s+(?:[\w:.=-]+\s+)*test|(?:\./)?gradlew?\s+(?:[\w:.=-]+\s+)*test|make\s+(?:[\w.=-]+\s+)*(?:test|check)|ctest|tox|phpunit|dotnet\s+test|mix\s+test|deno\s+test|swift\s+test|bazel\s+test|nox)(?:\s|$|;|&|\|)`)
 
-// testRunner returns how to name the test run in command, or "".
-func testRunner(command string) string {
-	m := testCommand.FindStringSubmatch(command)
-	if m == nil {
-		return ""
-	}
-	return strings.Join(strings.Fields(m[1]), " ")
-}
-
 // toolNote is an agent's one-line description of a tool call, tidied for
 // the activity feed: one line, capped.
 func toolNote(s string) string {

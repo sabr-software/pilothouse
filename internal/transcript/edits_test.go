@@ -155,8 +155,8 @@ func TestTestRunner(t *testing.T) {
 		"git commit -m 'add go test'":    "", // quoted text is no test run
 	}
 	for cmd, want := range cases {
-		if got := testRunner(cmd); got != want {
-			t.Errorf("testRunner(%q) = %q, want %q", cmd, got, want)
+		if got := runnerOf("tests", cmd); got != want {
+			t.Errorf("test runner in %q = %q, want %q", cmd, got, want)
 		}
 	}
 }

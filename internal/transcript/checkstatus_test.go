@@ -8,11 +8,20 @@ import (
 	"github.com/sabr-software/pilothouse/internal/api"
 )
 
-// statusOf judges one command as buildReceipt would.
+// statusOf judges one command as a receipt would.
 func statusOf(kind, command, result string, isError bool) string {
-	head := commandHead(command)
-	_, end := runnerAt(checkCommands[kind], head)
-	return step{command: command, result: result, isError: isError}.checkStatus(kind, head, end)
+	j, _ := worst(step{command: command, result: result, isError: isError}.checks(), kind)
+	return j.status
+}
+
+// runnerOf names the first check of a kind in command, or "".
+func runnerOf(kind, command string) string {
+	for _, r := range runnersIn(commandHead(command)) {
+		if r.kind == kind {
+			return r.name
+		}
+	}
+	return ""
 }
 
 // The outputs below are real, from agents' transcripts.

@@ -181,6 +181,10 @@ type rmtFakeTS struct {
 	status    string
 	calls     [][]string
 	serveErr  error
+	// `tailscale serve status`: nil output means the default (proxying
+	// to 127.0.0.1:7600).
+	serveStatus    *string
+	serveStatusErr error
 }
 
 func (f *rmtFakeTS) exec() rmtTSExec {
@@ -201,6 +205,13 @@ func (f *rmtFakeTS) exec() rmtTSExec {
 			f.calls = append(f.calls, append([]string{name}, args...))
 			if len(args) > 0 && args[0] == "status" {
 				return []byte(f.status), nil
+			}
+			if f.serveStatus != nil || f.serveStatusErr != nil {
+				s := ""
+				if f.serveStatus != nil {
+					s = *f.serveStatus
+				}
+				return []byte(s), f.serveStatusErr
 			}
 			return []byte("https://mac.tail1.ts.net (tailnet only)\n|-- / proxy http://127.0.0.1:7600\n"), nil
 		},
@@ -285,4 +296,64 @@ func TestRemoteTailscaleProblems(t *testing.T) {
 			t.Errorf("%s: public_url saved on failure", tc.name)
 		}
 	}
+}
+
+// `remote off` must not say it stopped serving when `tailscale serve off`
+// failed and Tailscale is still proxying to the web app.
+func TestRemoteOffWhenServeOffFails(t *testing.T) {
+	setup := func(t *testing.T, f *rmtFakeTS) {
+		t.Helper()
+		rmtIsolate(t)
+		cfg := config.Default()
+		cfg.Web.Addr, cfg.Web.PublicURL = "127.0.0.1:7600", "https://mac.tail1.ts.net"
+		if err := cfg.Save(); err != nil {
+			t.Fatal(err)
+		}
+		rmtTailscale = f.exec()
+	}
+	none := "No serve config\n"
+
+	t.Run("still proxying", func(t *testing.T) {
+		f := &rmtFakeTS{macApp: true, status: rmtGoodStatus, serveErr: errors.New("exit status 1")}
+		setup(t, f)
+		out, err := rmtRun(t, newRemoteCmd(), "off")
+		if err == nil {
+			t.Fatalf("exit 0 although Tailscale is still serving:\n%s", out)
+		}
+		if strings.Contains(out, "Stopped serving") || strings.Contains(out, "✓") {
+			t.Fatalf("claims success:\n%s", out)
+		}
+		for _, want := range []string{"still", "https://mac.tail1.ts.net", "tailscale serve --https=443 off"} {
+			if !strings.Contains(out+err.Error(), want) {
+				t.Errorf("missing %q in:\n%s%v", want, out, err)
+			}
+		}
+		// Pilothouse's own side is still switched off.
+		if got, _ := config.Load(); got.Web.PublicURL != "" {
+			t.Fatal("public_url not cleared")
+		}
+	})
+
+	t.Run("cannot tell", func(t *testing.T) {
+		f := &rmtFakeTS{macApp: true, status: rmtGoodStatus, serveErr: errors.New("exit status 1"), serveStatusErr: errors.New("not logged in")}
+		setup(t, f)
+		out, err := rmtRun(t, newRemoteCmd(), "off")
+		if err == nil || strings.Contains(out, "Stopped serving") {
+			t.Fatalf("unknown Serve state reported as stopped: %v\n%s", err, out)
+		}
+	})
+
+	// Nothing was being served (off run twice, or Serve reset by hand):
+	// `serve off` fails, but the result is what was asked for.
+	t.Run("already off in Tailscale", func(t *testing.T) {
+		f := &rmtFakeTS{macApp: true, status: rmtGoodStatus, serveErr: errors.New("exit status 1"), serveStatus: &none}
+		setup(t, f)
+		out, err := rmtRun(t, newRemoteCmd(), "off")
+		if err != nil || !strings.Contains(out, "✓ Stopped serving https://mac.tail1.ts.net") {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		if got, _ := config.Load(); got.Web.PublicURL != "" {
+			t.Fatal("public_url not cleared")
+		}
+	})
 }

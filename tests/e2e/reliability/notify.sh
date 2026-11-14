@@ -62,30 +62,31 @@ msg=$(jq -c 'select(.tags|index("lock"))' "$R/ntfy.jsonl" | head -1)
 jq -e '.title | test("Claude Code")' <<<"$msg" >/dev/null && pass "ntfy title" || fail "ntfy title: $(jq -r .title <<<"$msg")"
 jq -e '.message | test("wants to run")' <<<"$msg" >/dev/null && pass "ntfy body" || fail "ntfy body"
 jq -c 'select(.title=="Pilothouse test notification")' "$R/ntfy.jsonl" | grep -q . && pass "ntfy test message received" || fail "ntfy test message missing"
+# An action link is a bearer token, so it can only deny: allowing is signed by
+# a paired device, in the app the Open button leads to.
 ALLOW=$(jq -r '.actions[]? | select(.label=="Allow") | .url' <<<"$msg")
 DENY=$(jq -r '.actions[]? | select(.label=="Deny") | .url' <<<"$msg")
 OPEN=$(jq -r '.actions[]? | select(.label=="Open") | .url' <<<"$msg")
-echo "allow=$ALLOW deny=$DENY open=$OPEN"
-[[ $ALLOW =~ ^$PUB/api/actions/[A-Za-z0-9_-]{40,64}$ ]] && pass "allow URL well-formed" || fail "allow URL: $ALLOW"
+echo "deny=$DENY open=$OPEN"
+[ -z "$ALLOW" ] && pass "no Allow action link" || fail "ntfy message carries an Allow link: $ALLOW"
 [[ $DENY =~ ^$PUB/api/actions/[A-Za-z0-9_-]{40,64}$ ]] && pass "deny URL well-formed" || fail "deny URL: $DENY"
 [ "$OPEN" = "$PUB/r/$RID" ] && pass "open/click URL" || fail "open URL: $OPEN"
-[ "$(jq -r '.actions[]?|select(.label=="Allow")|.method' <<<"$msg")" = POST ] && pass "action method POST" || fail "action method"
+[ "$(jq -r '.actions[]?|select(.label=="Deny")|.method' <<<"$msg")" = POST ] && pass "action method POST" || fail "action method"
 # secrets: no action token, device token or cookie in the visible text
-tokA=${ALLOW##*/}; tokD=${DENY##*/}
-if grep -F -e "$tokA" -e "$tokD" <(jq -r '.title, .message' "$R/ntfy.jsonl") >/dev/null; then fail "action token leaked into title/body"; else pass "no token in ntfy title/body"; fi
+tokD=${DENY##*/}
+if grep -F -e "$tokD" <(jq -r '.title, .message' "$R/ntfy.jsonl") >/dev/null; then fail "action token leaked into title/body"; else pass "no token in ntfy title/body"; fi
 
 # ---- action tokens against the local daemon ----
 host=${PUB#https://}
 code() { curl -s -o "$R/act.$1.json" -w '%{http_code}' -X POST -H "Host: $2" "http://$WEB_ADDR/api/actions/$3"; }
-c=$(code badhost evil.example "$tokA"); [ "$c" = 421 ] && pass "action with foreign Host → 421" || fail "foreign Host gave $c"
+c=$(code badhost evil.example "$tokD"); [ "$c" = 421 ] && pass "action with foreign Host → 421" || fail "foreign Host gave $c"
 c=$(code short "$host" abc); [ "$c" = 404 ] && pass "short token → 404" || fail "short token $c"
 c=$(code forged "$host" "$(openssl rand -hex 24)"); [ "$c" = 410 ] && pass "forged token → 410" || fail "forged token $c"
-c=$(code allow "$host" "$tokA"); [ "$c" = 200 ] && pass "allow action → 200 ($(jq -r '.status+" by "+.decision.by' "$R/act.allow.json"))" || fail "allow action $c $(cat "$R/act.allow.json")"
-c=$(code replay "$host" "$tokA"); [ "$c" = 410 ] && pass "allow replay → 410" || fail "allow replay $c"
-c=$(code sibling "$host" "$tokD"); [ "$c" = 410 ] && pass "sibling deny after allow → 410" || fail "sibling deny $c"
+c=$(code deny "$host" "$tokD"); [ "$c" = 200 ] && pass "deny action → 200 ($(jq -r '.status+" by "+.decision.by' "$R/act.deny.json"))" || fail "deny action $c $(cat "$R/act.deny.json")"
+c=$(code replay "$host" "$tokD"); [ "$c" = 410 ] && pass "deny replay → 410" || fail "deny replay $c"
 wait $SHIM
 echo "shim exit=$(cat "$R/shim.code") stdout=$(cat "$R/shim.out")"
-jq -e '.hookSpecificOutput.decision.behavior=="allow"' "$R/shim.out" >/dev/null && pass "shim got allow" || fail "shim output"
+jq -e '.hookSpecificOutput.decision.behavior=="deny"' "$R/shim.out" >/dev/null && pass "shim got deny" || fail "shim output"
 
 # ---- webhooks ----
 sleep 2

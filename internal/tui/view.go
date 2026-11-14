@@ -229,7 +229,7 @@ func (m *Model) rowWhat(r row) string {
 	if s.LastMessage != "" {
 		return oneLine(s.LastMessage)
 	}
-	return string(s.State)
+	return oneLine(string(s.State))
 }
 
 func (m *Model) rowAge(r row) time.Duration {
@@ -354,6 +354,10 @@ func (m *Model) View() string {
 	case m.mode == modePlan || (m.mode == modeChanges && !m.ask.fromList):
 		out = append(out, m.viewPlan(w, listH+detailH)...)
 	default:
+		if m.hold.on && m.hold.shown.IsZero() {
+			// The selection the person didn't choose is on screen from now.
+			m.hold.shown = m.opts.Now()
+		}
 		lines, idx := m.listLines(w)
 		sel, top := selLines(idx, m.cursor)
 		start, end, up, down := window(len(lines), listH, m.scroll, sel, top)
@@ -403,7 +407,7 @@ func padLines(lines []string, h int) string {
 func (m *Model) viewHeader(w int) string {
 	left := " " + m.st.brand.Render("pilothouse")
 	if m.machine != "" {
-		left += m.st.dim.Render("  " + m.machine)
+		left += m.st.dim.Render("  " + oneLine(m.machine))
 	}
 	// Presence: where requests go right now.
 	var pres string
@@ -577,7 +581,7 @@ func (m *Model) viewDetail(w, h int) []string {
 		lines = append(lines, m.rule(title, w))
 		// The summary usually restates the command; show it only when it
 		// adds something (file edits, MCP calls).
-		if q.Summary != "" && (q.Command == "" || !strings.Contains(q.Summary, oneLine(q.Command))) {
+		if q.Summary != "" && (q.Command == "" || !strings.Contains(oneLine(q.Summary), oneLine(q.Command))) {
 			lines = append(lines, "  "+m.st.bold.Render(trunc(oneLine(q.Summary), inner)))
 		}
 		var body []string
@@ -602,9 +606,9 @@ func (m *Model) viewDetail(w, h int) []string {
 		loc := where(r.sess, q.Cwd) + "  " + m.st.dim.Render(ShortPath(q.Cwd))
 		lines = append(lines, m.labelLine("where", loc, w))
 		if q.PolicyRule != "" {
-			lines = append(lines, m.labelLine("rule", q.PolicyRule+m.st.dim.Render(" · your policy asks a person for this"), w))
+			lines = append(lines, m.labelLine("rule", oneLine(q.PolicyRule)+m.st.dim.Render(" · your policy asks a person for this"), w))
 		} else {
-			lines = append(lines, m.labelLine("tool", q.Tool, w))
+			lines = append(lines, m.labelLine("tool", oneLine(q.Tool), w))
 		}
 		if r.sess != nil && r.sess.LastMessage != "" {
 			lines = append(lines, m.labelLine("said", "“"+oneLine(r.sess.LastMessage)+"”", w))
@@ -616,12 +620,12 @@ func (m *Model) viewDetail(w, h int) []string {
 	}
 
 	s := r.sess
-	state := string(s.State)
+	state := oneLine(string(s.State))
 	if s.BlockKind != "" {
-		state += " (" + string(s.BlockKind) + ")"
+		state += " (" + oneLine(string(s.BlockKind)) + ")"
 	}
 	_, gst := m.rowGlyph(*r)
-	title := m.st.bold.Render(shortID(s.ID)) + m.st.dim.Render(" · "+agentName(s.Agent)+" · "+string(s.Mode)+" · ") +
+	title := m.st.bold.Render(shortID(s.ID)) + m.st.dim.Render(" · "+agentName(s.Agent)+" · "+oneLine(string(s.Mode))+" · ") +
 		gst.Render(state) + m.st.dim.Render(" for "+Age(m.rowAge(*r)))
 	lines = append(lines, m.rule(title, w))
 	lines = append(lines, "  "+m.st.bold.Render(trunc(m.rowWhat(*r), inner)))
@@ -645,7 +649,7 @@ func (m *Model) viewDetail(w, h int) []string {
 			lines = append(lines, m.labelLine(label, l, w))
 		}
 	}
-	src := string(s.StateLayer)
+	src := oneLine(string(s.StateLayer))
 	if src == "" {
 		src = "unknown source"
 	}
@@ -724,22 +728,22 @@ func (m *Model) viewExplain(w, h int) []string {
 		ex := m.explain
 		s := ex.Session
 		lines = append(lines, m.rule(m.st.bold.Render("Explain "+shortID(s.ID))+m.st.dim.Render(" · "+agentName(s.Agent)+" · "+where(&s, "")), w))
-		state := string(s.State)
+		state := oneLine(string(s.State))
 		if s.BlockKind != "" {
-			state += " (" + string(s.BlockKind) + ")"
+			state += " (" + oneLine(string(s.BlockKind)) + ")"
 		}
-		lines = append(lines, m.labelLine("state", m.st.bold.Render(state)+m.st.dim.Render(" · picked by: ")+ex.Rule, w))
+		lines = append(lines, m.labelLine("state", m.st.bold.Render(state)+m.st.dim.Render(" · picked by: ")+oneLine(ex.Rule), w))
 		if s.StateDetail != "" {
-			lines = append(lines, m.labelLine("detail", s.StateDetail, w))
+			lines = append(lines, m.labelLine("detail", oneLine(s.StateDetail), w))
 		}
 		lines = append(lines, "")
 		lines = append(lines, "  "+m.st.section.Render(fmt.Sprintf("%-10s %-10s %-20s %s", "WHEN", "LAYER", "STATE", "EVIDENCE")))
 		for _, e := range ex.Evidence {
-			st := string(e.State)
+			st := oneLine(string(e.State))
 			if e.Kind != "" {
-				st += "/" + string(e.Kind)
+				st += "/" + oneLine(string(e.Kind))
 			}
-			line := fmt.Sprintf("%-10s %-10s %-20s %s", Age(m.now.Sub(e.At))+" ago", e.Layer, st, oneLine(e.Detail))
+			line := fmt.Sprintf("%-10s %-10s %-20s %s", Age(m.now.Sub(e.At))+" ago", oneLine(string(e.Layer)), st, oneLine(e.Detail))
 			style := m.st.text
 			if !e.Fresh {
 				style = m.st.faint
@@ -774,7 +778,7 @@ func (m *Model) viewNotLoaded(w, h int) string {
 	} else {
 		body = []string{" " + m.st.brand.Render("pilothouse"), "", "   " + m.st.dim.Render("Connecting to the Pilothouse daemon…")}
 		if m.connErr != nil {
-			body = append(body, "", "   "+m.st.warn.Render(trunc(m.connErr.Error(), w-6)), "   "+m.st.dim.Render("Retrying · q to quit"))
+			body = append(body, "", "   "+m.st.warn.Render(trunc(oneLine(m.connErr.Error()), w-6)), "   "+m.st.dim.Render("Retrying · q to quit"))
 		}
 	}
 	top := max(0, (h-len(body))/3)

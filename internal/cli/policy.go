@@ -27,6 +27,7 @@ import (
 	"github.com/sabr-software/pilothouse/internal/client"
 	"github.com/sabr-software/pilothouse/internal/paths"
 	"github.com/sabr-software/pilothouse/internal/policy"
+	"github.com/sabr-software/pilothouse/internal/termsafe"
 )
 
 func newPolicyCmd() *cobra.Command {
@@ -143,7 +144,7 @@ func newPolicyCheckCmd() *cobra.Command {
 							fmt.Fprintf(out, "    %s\n", polTildeIn(e.Error()))
 						}
 					} else {
-						fmt.Fprintf(out, "    %v\n", err)
+						fmt.Fprintf(out, "    %s\n", termsafe.Text(err.Error()))
 					}
 					continue
 				}
@@ -233,7 +234,7 @@ func runPolicyTest(cmd *cobra.Command, f polTestFlags) error {
 	status := e.Status() // after Evaluate: includes the repo file it discovered
 
 	if f.asJSON {
-		enc := json.NewEncoder(out)
+		enc := json.NewEncoder(jsonOut(out))
 		enc.SetIndent("", "  ")
 		return enc.Encode(struct {
 			Input  policy.Input     `json:"input"`
@@ -241,6 +242,7 @@ func runPolicyTest(cmd *cobra.Command, f polTestFlags) error {
 			Status api.PolicyStatus `json:"status"`
 		}{in, res, status})
 	}
+	forPrint(&res) // a repo's policy file names its own rules and messages
 	st := polStyleFor(out)
 	for _, n := range notes {
 		fmt.Fprintln(errw, st.dim("("+n+")"))
@@ -484,10 +486,11 @@ func runPolicyReplay(cmd *cobra.Command, c *client.Client, since time.Time, asJS
 
 	out := cmd.OutOrStdout()
 	if asJSON {
-		enc := json.NewEncoder(out)
+		enc := json.NewEncoder(jsonOut(out))
 		enc.SetIndent("", "  ")
 		return enc.Encode(rep)
 	}
+	forPrint(&rep)
 	st := polStyleFor(out)
 	fmt.Fprintf(out, "Replayed %s since %s: %s.\n", polPlural(rep.Calls, "tool call"),
 		since.Format("Jan 2 15:04"), polPlural(rep.Changed, "verdict would change", "verdicts would change"))
@@ -656,7 +659,7 @@ func newPolicyStatusCmd() *cobra.Command {
 			trusted, terr := policy.ReadTrustedRepos(paths.TrustedRepos())
 			out := cmd.OutOrStdout()
 			if asJSON {
-				enc := json.NewEncoder(out)
+				enc := json.NewEncoder(jsonOut(out))
 				enc.SetIndent("", "  ")
 				return enc.Encode(struct {
 					Source  string               `json:"source"`
@@ -692,7 +695,7 @@ func polPrintStatus(out io.Writer, source string, s api.PolicyStatus, trusted []
 		case f.Scope == policy.ScopeRepo && !f.Trusted:
 			state += " " + st.dim("(untrusted: deny/ask only)")
 		}
-		fmt.Fprintf(tw, "  %s\t%s\t%s\n", f.Scope, polFileLabel(f.Path), state)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\n", oneLineText(string(f.Scope)), polFileLabel(f.Path), state)
 	}
 	tw.Flush()
 	if len(s.Errors) > 0 {
@@ -704,7 +707,7 @@ func polPrintStatus(out io.Writer, source string, s api.PolicyStatus, trusted []
 	fmt.Fprintln(out)
 	switch {
 	case terr != nil:
-		fmt.Fprintf(out, "Trusted repos: %s %v\n", st.red("error:"), terr)
+		fmt.Fprintf(out, "Trusted repos: %s %s\n", st.red("error:"), errLine(terr))
 	case len(trusted) == 0:
 		fmt.Fprintln(out, "Trusted repos: none "+st.dim("(`pilothouse policy trust` in a repo to allow its allow rules)"))
 	default:
@@ -773,7 +776,7 @@ func newPolicyRulesCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			if asJSON {
-				enc := json.NewEncoder(out)
+				enc := json.NewEncoder(jsonOut(out))
 				enc.SetIndent("", "  ")
 				return enc.Encode(v)
 			}
@@ -786,6 +789,7 @@ func newPolicyRulesCmd() *cobra.Command {
 }
 
 func polPrintRules(out io.Writer, v api.RulesView, source string) {
+	forPrint(&v)
 	st := polStyleFor(out)
 	if source == "local" {
 		fmt.Fprintln(out, st.dim("(daemon not running; showing the files on disk)"))
@@ -869,6 +873,7 @@ each cover one concern. They are stored in ~/.pilothouse/rules.yaml.`,
 				if err != nil {
 					return err
 				}
+				forPrint(&v)
 				if len(args) == 0 {
 					if source == "local" {
 						fmt.Fprintln(out, polStyleFor(out).dim("(daemon not running; showing the files on disk)"))
@@ -1083,20 +1088,25 @@ func polExists(p string) bool {
 	return !errors.Is(err, fs.ErrNotExist) && err == nil
 }
 
+// polTilde is a path for display: the home directory shortened, control
+// characters shown (a repo is wherever the agent was started).
 func polTilde(p string) string {
 	home := paths.UserHome()
 	if home != "" && (p == home || strings.HasPrefix(p, home+"/")) {
-		return "~" + p[len(home):]
+		p = "~" + p[len(home):]
 	}
-	return p
+	return termsafe.Escape(p)
 }
 
 // polTildeIn shortens the home directory wherever it appears in a message.
+// A message about a policy file may quote the file: its control characters
+// are shown, and a line break in it continues indented, so nothing the
+// file says can pass for a line of this command's own.
 func polTildeIn(s string) string {
 	if home := paths.UserHome(); home != "" && home != "/" {
-		return strings.ReplaceAll(s, home+"/", "~/")
+		s = strings.ReplaceAll(s, home+"/", "~/")
 	}
-	return s
+	return strings.ReplaceAll(termsafe.Text(s), "\n", "\n      ")
 }
 
 func polFileLabel(f string) string {
@@ -1125,7 +1135,7 @@ func polShort(s string, n int) string {
 }
 
 func polOneLine(s string) string {
-	return strings.Join(strings.Fields(s), " ")
+	return termsafe.Line(s)
 }
 
 // polStyle colours output only on a terminal, and never with NO_COLOR.

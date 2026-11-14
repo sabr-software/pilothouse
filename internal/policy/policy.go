@@ -439,6 +439,8 @@ func (r *rule) eval(c *evalCtx) (ok bool, msg string, err error) {
 			} else {
 				ok = c.strictCommand(fm)
 			}
+		case fm.field == fPath:
+			ok = c.matchPaths(fm, r.action == api.BehaviorAllow)
 		default:
 			ok = c.matchField(fm)
 		}
@@ -479,6 +481,8 @@ type evalCtx struct {
 
 	paths     []string
 	pathsDone bool
+	real      []string
+	realDone  bool
 	pathsVal  ref.Val
 	input     map[string]any
 	inputDone bool
@@ -492,7 +496,15 @@ type evalCtx struct {
 // the same variable.
 func (c *evalCtx) celPaths() ref.Val {
 	if c.pathsVal == nil {
-		c.pathsVal = types.NewStringList(types.DefaultTypeAdapter, c.absPaths())
+		// Both names of a file reached through a symlink, so a condition
+		// on the real location sees it.
+		all := c.absPaths()
+		for i, r := range c.realPaths() {
+			if r != all[i] {
+				all = append(slices.Clip(all), r)
+			}
+		}
+		c.pathsVal = types.NewStringList(types.DefaultTypeAdapter, all)
 	}
 	return c.pathsVal
 }
@@ -524,17 +536,49 @@ func (c *evalCtx) inputMap() map[string]any {
 	return c.input
 }
 
-func (c *evalCtx) matchField(fm *fieldMatch) bool {
-	if fm.field == fPath {
-		for _, p := range c.absPaths() {
-			for _, g := range fm.globs {
-				if g.match(p) {
-					return true
-				}
+// realPaths is absPaths with symlinks resolved, index for index: the files
+// the call would touch, whatever it called them.
+func (c *evalCtx) realPaths() []string {
+	if !c.realDone {
+		c.realDone = true
+		paths := c.absPaths()
+		c.real = make([]string, len(paths))
+		for i, p := range paths {
+			c.real[i] = p
+			if c.eng != nil {
+				c.real[i], _ = c.eng.resolveSymlinks(p, c.wall)
 			}
 		}
-		return false
 	}
+	return c.real
+}
+
+// matchPaths is the `path:` test. A file has more than one name: letter
+// case on a file system that ignores it, and any path through a symlink.
+// A deny or ask rule holds if either the name the call used or the file it
+// resolves to matches, for any file of the call. An allow rule has to
+// match the resolved file, and every file of the call: allowing lib/**
+// does not allow lib/link/x where link points elsewhere, nor a patch that
+// also touches a file outside lib.
+func (c *evalCtx) matchPaths(fm *fieldMatch, allow bool) bool {
+	paths, real := c.absPaths(), c.realPaths()
+	if allow {
+		for _, r := range real {
+			if !anyGlob(fm.globs, foldPath(r)) {
+				return false
+			}
+		}
+		return len(real) > 0
+	}
+	for i, p := range paths {
+		if anyGlob(fm.globs, foldPath(p)) || (real[i] != p && anyGlob(fm.globs, foldPath(real[i]))) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *evalCtx) matchField(fm *fieldMatch) bool {
 	var v string
 	switch fm.field {
 	case fAgent:
@@ -546,9 +590,9 @@ func (c *evalCtx) matchField(fm *fieldMatch) bool {
 	case fCommand:
 		v = c.in.Command
 	case fCwd:
-		v = c.cwd
+		v = foldPath(c.cwd)
 	case fRepo:
-		v = c.repo
+		v = foldPath(c.repo)
 	case fBranch:
 		v = c.in.Branch
 	}

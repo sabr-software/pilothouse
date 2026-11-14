@@ -319,6 +319,9 @@ export function settingsView() {
 
   const onTheme = () => renderAppearance();
   addEventListener('pilothouse:theme', onTheme);
+  // The key is read from IndexedDB after this view is drawn.
+  const onKey = () => { if (!device.contains(document.activeElement)) renderDevice(); };
+  addEventListener('pilothouse:keystate', onKey);
   renderNotif();
   renderPresence();
   renderAppearance();
@@ -333,6 +336,9 @@ export function settingsView() {
       renderMachines();
       if (kind === 'data' && !device.contains(document.activeElement)) renderDevice();
     },
-    destroy() { removeEventListener('pilothouse:theme', onTheme); },
+    destroy() {
+      removeEventListener('pilothouse:theme', onTheme);
+      removeEventListener('pilothouse:keystate', onKey);
+    },
   };
 }

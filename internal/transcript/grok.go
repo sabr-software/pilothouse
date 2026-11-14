@@ -203,7 +203,7 @@ func describeGrokTool(it *item, u grokUpdate) {
 		if cmd == "" {
 			cmd = strings.TrimSuffix(strings.TrimPrefix(title, "Run `"), "`")
 		}
-		it.command = cmd
+		it.command = capHead(cmd, maxCommand)
 		if cmd != "" {
 			it.Summary = "Run: " + hookkit.OneLine(cmd, 160)
 		} else {

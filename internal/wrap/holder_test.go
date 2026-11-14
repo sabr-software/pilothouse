@@ -3,11 +3,17 @@ package wrap
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/creack/pty"
+	"golang.org/x/term"
 
 	"github.com/sabr-software/pilothouse/internal/api"
 	"github.com/sabr-software/pilothouse/internal/paths"
@@ -405,4 +411,51 @@ func TestHolderAnswersOSCQuery(t *testing.T) {
 	s.waitOutput(`reply:033]7501;?033\`)
 	s.send("\r")
 	h.wait(t)
+}
+
+// An agent that keeps asking without reading its input fills the PTY, and
+// the answers wait. They must not wait in a goroutine each, and every one
+// of them still arrives once the agent reads.
+func TestOSCQueryAnswersDoNotPileUp(t *testing.T) {
+	ptmx, tty, err := pty.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ptmx.Close()
+	defer tty.Close()
+	if _, err := term.MakeRaw(int(tty.Fd())); err != nil {
+		t.Fatal(err)
+	}
+	h := &Holder{log: slog.New(slog.DiscardHandler), ptmx: ptmx}
+	const queries = 3000
+	before := runtime.NumGoroutine()
+	for i := 0; i < queries; i++ {
+		h.answerOSCQuery()
+	}
+	time.Sleep(300 * time.Millisecond) // whatever was started is now stuck on the full PTY
+	if n := runtime.NumGoroutine() - before; n > 5 {
+		t.Errorf("%d goroutines waiting to answer %d queries", n, queries)
+	}
+
+	got := make(chan string, 1)
+	go func() {
+		buf := make([]byte, queries*len(QueryReply))
+		n, _ := io.ReadFull(tty, buf)
+		got <- string(buf[:n])
+	}()
+	select {
+	case s := <-got:
+		if s != strings.Repeat(QueryReply, queries) {
+			t.Errorf("read %d bytes of answers, want %d whole ones", len(s), queries)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("the answers never all arrived")
+	}
+	waitFor(t, 5*time.Second, "the answering goroutine to finish", func() bool { return runtime.NumGoroutine() <= before })
+	// And it starts again for the next query.
+	h.answerOSCQuery()
+	buf := make([]byte, len(QueryReply))
+	if _, err := io.ReadFull(tty, buf); err != nil || string(buf) != QueryReply {
+		t.Fatalf("a later query: %q %v", buf, err)
+	}
 }

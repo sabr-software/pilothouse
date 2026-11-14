@@ -102,7 +102,7 @@ To reach this computer from your phone, run ` + "`pilothouse remote tailscale`" 
 			}
 			out := cmd.OutOrStdout()
 			if asJSON {
-				return json.NewEncoder(out).Encode(p)
+				return json.NewEncoder(jsonOut(out)).Encode(p)
 			}
 			rmtPrintPair(out, p, !noQR)
 			if noWait || after < 0 {
@@ -137,8 +137,8 @@ func rmtPrintPair(w io.Writer, p api.PairStart, qr bool) {
 			QuietZone:      2,
 		})
 	}
-	fmt.Fprintf(w, "  Link:  %s\n", p.URL)
-	fmt.Fprintf(w, "  Code:  %s  (one-time, expires in %d min at %s)\n", p.Code, max(mins, 1), p.ExpiresAt.Local().Format("15:04"))
+	fmt.Fprintf(w, "  Link:  %s\n", oneLineText(p.URL))
+	fmt.Fprintf(w, "  Code:  %s  (one-time, expires in %d min at %s)\n", oneLineText(p.Code), max(mins, 1), p.ExpiresAt.Local().Format("15:04"))
 }
 
 // rmtWaitForDevice follows the event log until a device that wasn't
@@ -161,7 +161,7 @@ func rmtWaitForDevice(ctx context.Context, c rmtDaemon, w io.Writer, after int64
 	})
 	switch {
 	case paired != nil:
-		fmt.Fprintf(w, "✓ Paired %q (%s). Turn on notifications in its Settings tab.\n", paired.Name, paired.ID)
+		fmt.Fprintf(w, "✓ Paired %q (%s). Turn on notifications in its Settings tab.\n", paired.Name, oneLineText(paired.ID))
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		fmt.Fprintln(w, "The code expired. Run `pilothouse pair` again.")
 	}
@@ -183,8 +183,9 @@ func newDevicesCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			if asJSON {
-				return json.NewEncoder(out).Encode(ds)
+				return json.NewEncoder(jsonOut(out)).Encode(ds)
 			}
+			forPrint(&ds) // a device chose its own name
 			if len(ds) == 0 {
 				fmt.Fprintln(out, "No paired devices. Pair your phone with `pilothouse pair`.")
 				return nil
@@ -237,7 +238,7 @@ func newDevicesCmd() *cobra.Command {
 			if err := c.RevokeDevice(ctx, match[0].ID); err != nil {
 				return rmtErr(err, "pilothouse devices revoke")
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Revoked %q (%s).\n", match[0].Name, match[0].ID)
+			fmt.Fprintf(cmd.OutOrStdout(), "Revoked %q (%s).\n", match[0].Name, oneLineText(match[0].ID))
 			return nil
 		},
 	})
@@ -272,11 +273,11 @@ func newOpenCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			if printOnly {
-				fmt.Fprintln(out, l.URL)
+				fmt.Fprintln(out, oneLineText(l.URL))
 				return nil
 			}
 			if err := rmtOpenBrowser(l.URL); err != nil {
-				fmt.Fprintf(out, "Couldn't open a browser (%v). Open this one-time link yourself:\n  %s\n", err, l.URL)
+				fmt.Fprintf(out, "Couldn't open a browser (%s). Open this one-time link yourself:\n  %s\n", errLine(err), oneLineText(l.URL))
 				return nil
 			}
 			fmt.Fprintln(out, "Opened the Pilothouse web app in your browser.")
@@ -444,12 +445,21 @@ func rmtTailscaleOn(ctx context.Context, w io.Writer) error {
 }
 
 func rmtTailscaleOff(ctx context.Context, w io.Writer) error {
-	if _, err := config.Load(); err != nil {
+	cfg, err := config.Load()
+	if err != nil {
 		return err
 	}
+	// offErr: `serve off` failed and Tailscale may still be proxying.
+	var offErr error
 	if bin, err := rmtTailscale.binary(); err == nil {
 		if err := rmtTailscale.interactive(ctx, bin, rmtServeOffArgs()...); err != nil {
-			fmt.Fprintf(w, "! `tailscale %s` failed (%v); check `tailscale serve status`.\n", strings.Join(rmtServeOffArgs(), " "), err)
+			// It also fails when nothing was being served (off run twice,
+			// Serve reset by hand). Only a Serve status that no longer
+			// names the web app counts as stopped.
+			out, serr := rmtTailscale.output(ctx, bin, "serve", "status")
+			if serr != nil || strings.Contains(string(out), "127.0.0.1:"+rmtWebPort(cfg)) {
+				offErr = err
+			}
 		}
 	}
 	had := ""
@@ -458,6 +468,14 @@ func rmtTailscaleOff(ctx context.Context, w io.Writer) error {
 		return nil
 	}); err != nil {
 		return err
+	}
+	if offErr != nil {
+		// Saying "stopped" here would leave the web app published while
+		// the person believes it isn't.
+		off := "tailscale " + strings.Join(rmtServeOffArgs(), " ")
+		fmt.Fprintf(w, "! `%s` failed (%v): Tailscale may still be serving %s.\n", off, offErr, rmtOr(had, "the web app"))
+		fmt.Fprintf(w, "  Remote access is off in Pilothouse's config, but run `%s` yourself and check `tailscale serve status`.\n", off)
+		return ExitError{Code: 1}
 	}
 	if had != "" {
 		fmt.Fprintf(w, "✓ Stopped serving %s. Paired phones can't reach this computer until you run `pilothouse remote tailscale` again.\n", had)

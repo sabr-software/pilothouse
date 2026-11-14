@@ -175,38 +175,34 @@ func TestPermissionButtons(t *testing.T) {
 	if !strings.Contains(s.Text, "<pre>git push origin &lt;main&gt; &amp;&amp; echo '&amp;'</pre>") || !strings.Contains(s.Text, "<b>Claude Code</b> · pilothouse (main)") {
 		t.Fatalf("text not escaped or missing context:\n%s", s.Text)
 	}
+	// Allowing is a link to the app, where the device signs it; denying
+	// takes one tap here.
 	bs := s.buttons()
-	if len(bs) != 4 || bs[3].URL != "https://studio.tail1.ts.net/r/r_perm000001" {
+	if len(bs) != 2 || bs[0].Text != "✅ Allow in the app" || bs[0].URL != "https://studio.tail1.ts.net/r/r_perm000001" || bs[0].CallbackData != "" {
 		t.Fatalf("buttons = %+v", bs)
 	}
-	for _, b := range bs[:3] {
-		if len(b.CallbackData) > 64 || !strings.HasPrefix(b.CallbackData, tokenPrefix) || strings.Contains(b.CallbackData, "r_perm") {
-			t.Fatalf("callback data %q: must be an opaque token within 64 bytes", b.CallbackData)
-		}
+	if b := bs[1]; len(b.CallbackData) > 64 || !strings.HasPrefix(b.CallbackData, tokenPrefix) || strings.Contains(b.CallbackData, "r_perm") {
+		t.Fatalf("callback data %q: must be an opaque token within 64 bytes", b.CallbackData)
 	}
 
-	f.bot.Handle(bg, press(chatID, chatID, s.ID, button(t, bs, "Allow for session")))
+	f.bot.Handle(bg, press(chatID, chatID, s.ID, button(t, bs, "Deny")))
 	d := f.decision(r.ID)
-	if d == nil || d.Behavior != api.BehaviorAllow || d.Scope != api.ScopeSession || d.By != "telegram:4242" {
+	if d == nil || d.Behavior != api.BehaviorDeny || d.By != "telegram:4242" {
 		t.Fatalf("decision = %+v", d)
 	}
 	e := f.mock.lastEdit(t)
-	if e.MessageID != s.ID || !strings.Contains(e.Text, "✓ Allowed for this session from Telegram") || len(parseButtons(e.Markup)) != 0 {
+	if e.MessageID != s.ID || !strings.Contains(e.Text, "✗ Denied from Telegram") || len(parseButtons(e.Markup)) != 0 {
 		t.Fatalf("edit = %+v", e)
 	}
-	if a := f.mock.lastAnswer(t); a.Text != "✓ Allowed for this session" {
+	if a := f.mock.lastAnswer(t); a.Text != "✗ Denied" {
 		t.Fatalf("answer = %+v", a)
 	}
 
-	// Replay: the same button, and the other buttons of that keyboard, do nothing.
+	// Replay: the same button does nothing.
 	edits := f.mock.editCount()
-	f.bot.Handle(bg, press(chatID, chatID, s.ID, button(t, bs, "Allow for session")))
-	if a := f.mock.lastAnswer(t); a.Text != "This button was already used." {
-		t.Fatalf("replay answer = %+v", a)
-	}
 	f.bot.Handle(bg, press(chatID, chatID, s.ID, button(t, bs, "Deny")))
-	if d := f.decision(r.ID); d.Behavior != api.BehaviorAllow || f.mock.editCount() != edits {
-		t.Fatalf("stale keyboard acted: %+v", d)
+	if a := f.mock.lastAnswer(t); a.Text != "This button was already used." || f.mock.editCount() != edits {
+		t.Fatalf("replay answer = %+v", a)
 	}
 	// Forged data and data from another message are refused.
 	f.bot.Handle(bg, press(chatID, chatID, s.ID, "t:AAAAAAAAAAAAAAAAAAAAAA"))
@@ -219,20 +215,20 @@ func TestWrongChatIgnored(t *testing.T) {
 	f := newFixture(t)
 	r := f.open(permissionReq("r_wrong00001", "rm -rf build"))
 	s := f.notifyRequest(r)
-	allow := button(t, s.buttons(), "✅ Allow")
+	deny := button(t, s.buttons(), "❌ Deny")
 	// Another chat, or another user in our chat id: no answer, no decision.
-	f.bot.Handle(bg, press(99, 99, s.ID, allow))
-	f.bot.Handle(bg, press(chatID, 99, s.ID, allow))
+	f.bot.Handle(bg, press(99, 99, s.ID, deny))
+	f.bot.Handle(bg, press(chatID, 99, s.ID, deny))
 	if f.mock.answerCount() != 0 || f.decision(r.ID) != nil {
 		t.Fatalf("foreign press acted: answers=%d", f.mock.answerCount())
 	}
 	// The right chat, but the token is bound to a different message.
-	f.bot.Handle(bg, press(chatID, chatID, s.ID+1, allow))
+	f.bot.Handle(bg, press(chatID, chatID, s.ID+1, deny))
 	if f.decision(r.ID) != nil {
 		t.Fatal("token used on another message")
 	}
-	f.bot.Handle(bg, press(chatID, chatID, s.ID, allow))
-	if d := f.decision(r.ID); d == nil || d.Behavior != api.BehaviorAllow {
+	f.bot.Handle(bg, press(chatID, chatID, s.ID, deny))
+	if d := f.decision(r.ID); d == nil || d.Behavior != api.BehaviorDeny {
 		t.Fatalf("decision = %+v", d)
 	}
 }
@@ -287,7 +283,7 @@ func TestEditOnClose(t *testing.T) {
 		t.Fatalf("edit = %q %s", e.Text, e.Markup)
 	}
 	// Its buttons are dead, and a second withdrawal edits nothing.
-	f.bot.Handle(bg, press(chatID, chatID, s.ID, button(t, s.buttons(), "✅ Allow")))
+	f.bot.Handle(bg, press(chatID, chatID, s.ID, button(t, s.buttons(), "❌ Deny")))
 	if a := f.mock.lastAnswer(t); a.Text != "This button was already used." {
 		t.Fatalf("answer = %+v", a)
 	}
@@ -391,7 +387,7 @@ func TestPlanFeedbackViaReply(t *testing.T) {
 		t.Fatalf("prompt = %+v %s", prompt, prompt.Markup)
 	}
 	// The plan keeps working buttons while the person types.
-	if bs := parseButtons(f.mock.lastEdit(t).Markup); len(bs) < 2 || bs[0].CallbackData == button(t, s.buttons(), "Approve") {
+	if bs := parseButtons(f.mock.lastEdit(t).Markup); len(bs) != 2 || bs[0].URL == "" || bs[1].CallbackData == "" || bs[1].CallbackData == button(t, s.buttons(), "Request changes") {
 		t.Fatalf("buttons not refreshed: %+v", bs)
 	}
 
@@ -409,7 +405,8 @@ func TestPlanFeedbackViaReply(t *testing.T) {
 		t.Fatalf("second feedback = %q", f.mock.lastSent(t).Text)
 	}
 
-	// Replying straight to an open plan message works too; Approve approves.
+	// Replying straight to an open plan message works too; approving is a
+	// link to the app.
 	r2 := f.open(api.Request{ID: "r_plan000002", Checkpoint: api.CheckpointPlan, Plan: &api.Plan{Markdown: "Plan B"}})
 	s2 := f.notifyRequest(r2)
 	f.bot.Handle(bg, replyTo(chatID, s2.ID, "smaller steps"))
@@ -418,9 +415,8 @@ func TestPlanFeedbackViaReply(t *testing.T) {
 	}
 	r3 := f.open(api.Request{ID: "r_plan000003", Checkpoint: api.CheckpointPlan, Plan: &api.Plan{Markdown: "Plan C"}})
 	s3 := f.notifyRequest(r3)
-	f.bot.Handle(bg, press(chatID, chatID, s3.ID, button(t, s3.buttons(), "Approve")))
-	if d := f.decision(r3.ID); d == nil || d.Behavior != api.BehaviorAllow {
-		t.Fatalf("approve = %+v", d)
+	if bs := s3.buttons(); len(bs) != 2 || bs[0].Text != "✅ Approve in the app" || bs[0].URL != "https://studio.tail1.ts.net/r/r_plan000003" {
+		t.Fatalf("plan buttons = %+v", bs)
 	}
 }
 

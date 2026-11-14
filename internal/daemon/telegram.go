@@ -34,8 +34,12 @@ type telegramManager struct {
 
 	// cfg is the last config read: the file when it exists, else the
 	// daemon's own (tests inject one without a file).
-	cfg       *config.Config
-	cfgMtime  time.Time
+	cfg      *config.Config
+	cfgMtime time.Time
+
+	// keysMu guards the last key file read: keys runs on the daemon's
+	// loop (check) and on the bot's goroutine (Options.Keys).
+	keysMu    sync.Mutex
 	keysErr   string
 	keysCache telegram.Keys
 }
@@ -75,6 +79,8 @@ func (m *telegramManager) config() *config.Config {
 
 func (m *telegramManager) keys() telegram.Keys {
 	k, err := telegram.LoadKeys(telegram.KeysPath())
+	m.keysMu.Lock()
+	defer m.keysMu.Unlock()
 	if err != nil {
 		if msg := err.Error(); msg != m.keysErr {
 			m.keysErr = msg

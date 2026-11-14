@@ -84,7 +84,7 @@ for n in env-small env-3mb env-5mb; do
 done
 [ "$dec_env_small" = deny ] && pass "deny rule applies to small Write .env" || fail "small .env not denied ($dec_env_small)"
 [ "$dec_env_3mb" = deny ] && pass "deny rule applies to 3 MB Write .env" || fail "3 MB .env not denied ($dec_env_3mb)"
-[ "$dec_env_5mb" = deny ] && pass "deny rule applies to 5 MB Write .env" || fail "POLICY BYPASS: 5 MB Write to .env gets '$dec_env_5mb' (shim stdin cap 4 MB → fail-open, deny rule never evaluated)"
+[ "$dec_env_5mb" = deny ] && pass "deny rule applies to 5 MB Write .env" || fail "POLICY BYPASS: 5 MB Write to .env gets '$dec_env_5mb' (payload over the shim's stdin cap → fail-open, deny rule never evaluated)"
 write_config 'notify:' '  desktop: false' 'update_check: false' 'approvals: {hold_limit: 60s, fail_closed: true}'
 read -r rc ms bytes <<<"$(shim env-5mb-fc "$R/in.env-5mb")"
 echo "      same 5 MB payload with approvals.fail_closed: true → rc $rc stdout '$(head -c 120 "$R/env-5mb-fc.out")'"
@@ -95,8 +95,14 @@ api /v1/health >/dev/null && pass "daemon alive after fuzzing" || fail "daemon d
 # ---- local API: malformed and oversized bodies ----
 c=$(api /v1/hook -o /dev/null -w '%{http_code}' -X POST -d '{bad'); [ "$c" = 400 ] && pass "POST /v1/hook bad JSON → 400" || fail "bad JSON → $c"
 c=$(api /v1/hook -o "$R/unk.json" -w '%{http_code}' -X POST -d '{"agent":"nope","payload":{}}'); [ "$c" = 200 ] && pass "unknown agent envelope → 200 $(cat "$R/unk.json")" || fail "unknown agent envelope $c"
-head -c $((20<<20)) /dev/zero | tr '\0' 'a' | sed 's/^/{"agent":"claude","payload":"/; s/$/"}/' >"$R/big.json"
-c=$(api /v1/hook -o "$R/big.resp" -w '%{http_code}' -X POST --data-binary @"$R/big.json"); [ "$c" = 400 ] || [ "$c" = 413 ] && pass "20 MB envelope → $c" || fail "20 MB envelope → $c"
+# Hook envelopes carry up to 64 MB of stdin (the daemon reads up to 72 MB):
+# 20 MB is inside the limit and is answered, 80 MB is refused.
+big() { { printf '{"agent":"claude","payload":"'; head -c $(($1<<20)) /dev/zero | tr '\0' 'a'; printf '"}'; } >"$R/big.json"; }
+big 20
+c=$(api /v1/hook -o "$R/big.resp" -w '%{http_code}' -X POST --data-binary @"$R/big.json"); [ "$c" = 200 ] && pass "20 MB envelope (inside the limit) → 200" || fail "20 MB envelope → $c"
+big 80
+c=$(api /v1/hook -o "$R/big.resp" -w '%{http_code}' -X POST --data-binary @"$R/big.json"); [ "$c" = 400 ] || [ "$c" = 413 ] && pass "80 MB envelope (over the limit) → $c" || fail "80 MB envelope → $c"
+rm -f "$R/big.json"
 api /v1/health >/dev/null && pass "daemon alive after API abuse" || fail "daemon died on API abuse"
 
 # ---- daemon SIGKILL mid-hold ----

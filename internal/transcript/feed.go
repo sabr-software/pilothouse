@@ -18,6 +18,7 @@ const (
 	maxText         = 2000  // prompt and reply text (head kept)
 	maxResult       = 1000  // tool output (tail kept)
 	maxCheckOutput  = 16384 // a check's output, for reading its result (tail kept)
+	maxCommand      = 16384 // a shell command, for recognising its checks (head kept)
 	maxSummary      = 200
 	maxFiles        = 500
 	recentMessages  = 512     // message ids whose usage is kept, for per-block dedupe
@@ -40,6 +41,7 @@ type item struct {
 	exit    *int       // exit code when the result says (Codex)
 	denied  bool       // the error is a refusal (a person or a rule), not a failure
 	fold    bool       // result folded in (no longer waiting)
+	lost    bool       // settled without a result: nobody saw how it ended
 	chain   string     // pending-tool scope: "" main, else the sidechain file
 }
 
@@ -90,6 +92,8 @@ type feed struct {
 	lastMsg     map[string]string // chain → last assistant message id
 
 	checkOutput map[string]string // this turn's long check output, by item ID
+	lastPrompt  *item             // the latest turn's prompt, kept past the window
+	early       *turnTally        // the latest turn's calls that left the window
 
 	files     map[string]*api.FileChange
 	fileRefs  map[string]int // file → edits counted in it
@@ -139,6 +143,9 @@ func (f *feed) add(it *item) *item {
 	}
 	it.Text = capHead(it.Text, maxText)
 	it.Summary = hookkit.Truncate(oneLine(it.Summary), maxSummary)
+	// A command can carry megabytes (a heredoc), and every read of the
+	// receipt goes through it.
+	it.command = capHead(it.command, maxCommand)
 	// Usually newest: append. A sidechain read after the main file may
 	// interleave, so insert in place.
 	n := len(f.items)
@@ -150,12 +157,36 @@ func (f *feed) add(it *item) *item {
 	copy(f.items[i+1:], f.items[i:])
 	f.items[i] = it
 	f.byID[it.ID] = it
+	if it.Kind == api.ActivityPrompt && !it.Sidechain && (f.lastPrompt == nil || !before(it, f.lastPrompt)) {
+		f.lastPrompt, f.early = it, nil
+	}
 	for len(f.items) > f.maxItems {
-		delete(f.byID, f.items[0].ID)
-		f.items[0] = nil
-		f.items = f.items[1:]
+		f.evict()
 	}
 	return it
+}
+
+// evict drops the oldest item. The feed is a window on the session, but a
+// receipt is a whole turn: what the latest turn loses here it keeps as a
+// tally, or a long turn would forget its prompt and the checks it began
+// with.
+func (f *feed) evict() {
+	old := f.items[0]
+	if p := f.lastPrompt; old != p && (p == nil || !old.At.Before(p.At)) {
+		if s, ok := f.step(old); ok {
+			if s.pending {
+				s.pending, s.lost = false, true // its result can't reach it now
+			}
+			if f.early == nil {
+				f.early = newTurnTally()
+			}
+			f.early.add(s)
+		}
+	}
+	delete(f.checkOutput, old.ID)
+	delete(f.byID, old.ID)
+	f.items[0] = nil
+	f.items = f.items[1:]
 }
 
 func before(a, b *item) bool {
@@ -197,12 +228,16 @@ func (f *feed) result(id, text string, isError bool, exit *int) *item {
 
 // settle marks every tool call still waiting in chain as done: the agent
 // moved on (a new response, the turn ended), so their results are lost to
-// us (an over-long line) or never came (interrupted).
+// us (an over-long line) or never came (interrupted). A check among them
+// is unclear, not passed: nobody saw how it ended.
 func (f *feed) settle(chain string) {
 	for i := len(f.items) - 1; i >= 0; i-- {
 		it := f.items[i]
 		if it.Pending && it.chain == chain {
-			it.Pending, it.fold = false, true
+			it.Pending, it.fold, it.lost = false, true, true
+			if j, ok := worst(step{command: it.command, lost: true}.checks(), ""); ok {
+				it.CheckStatus = j.status
+			}
 			f.touch(it)
 		}
 	}

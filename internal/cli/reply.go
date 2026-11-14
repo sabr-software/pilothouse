@@ -74,6 +74,8 @@ func runReply(cmd *cobra.Command, c *client.Client, ref string, r api.Reply) err
 	if err != nil {
 		return err
 	}
+	forPrint(&s)
+	forPrint(&res)
 	what := "Sent to"
 	if r.Interrupt && strings.TrimSpace(r.Text) == "" {
 		what = "Interrupted"

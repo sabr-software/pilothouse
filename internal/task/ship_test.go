@@ -243,6 +243,157 @@ func TestCloseNothingToShip(t *testing.T) {
 	}
 }
 
+// An agent that detaches HEAD (git checkout --detach, a rebase stopped
+// half-way) or switches branches commits where the task's branch does not
+// see it. Removing the worktree would drop those commits, so nothing that
+// removes it goes ahead.
+func TestFinishRefusesWorkOffTheBranch(t *testing.T) {
+	testEnv(t)
+	repo := newRepo(t)
+	pathWith(t, "")
+	ctx := context.Background()
+	detach := []string{"checkout", "-q", "--detach"}
+
+	for _, tc := range []struct {
+		name   string
+		leave  []string // how the agent left the branch
+		where  string
+		finish func(m *Manager, id string) (api.Task, error)
+	}{
+		{"close detached", detach, "a detached HEAD", func(m *Manager, id string) (api.Task, error) { return m.Close(ctx, id) }},
+		{"ship detached", detach, "a detached HEAD", func(m *Manager, id string) (api.Task, error) { return m.Ship(ctx, id) }},
+		{"done detached", detach, "a detached HEAD", func(m *Manager, id string) (api.Task, error) { return m.Done(ctx, id, DoneOptions{}) }},
+		{"done --force detached", detach, "a detached HEAD", func(m *Manager, id string) (api.Task, error) {
+			return m.Done(ctx, id, DoneOptions{Force: true})
+		}},
+		{"ship other branch", []string{"checkout", "-q", "-b", "side"}, "branch side", func(m *Manager, id string) (api.Task, error) { return m.Ship(ctx, id) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, tk := newShipTask(t, repo)
+			tk.Status = api.TaskReview
+			if err := saveTask(tk); err != nil {
+				t.Fatal(err)
+			}
+			mustGit(t, tk.Worktree, tc.leave...)
+			writeFile(t, filepath.Join(tk.Worktree, "work.txt"), "the agent's work\n", 0o644)
+			mustGit(t, tk.Worktree, "add", "work.txt")
+			mustGit(t, tk.Worktree, "commit", "-q", "-m", "work off the branch")
+			sha := mustGit(t, tk.Worktree, "rev-parse", "HEAD")
+			if strings.HasPrefix(tc.name, "ship") {
+				// Uncommitted work too: Ship would commit it where HEAD is.
+				writeFile(t, filepath.Join(tk.Worktree, "more.txt"), "uncommitted\n", 0o644)
+			}
+
+			got, err := tc.finish(m, tk.ID)
+			if err == nil {
+				t.Fatalf("finished a task whose work is on %s: %+v", tc.where, got)
+			}
+			for _, want := range []string{tc.where, tk.Branch, tk.Worktree, "git merge " + sha[:7]} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error lacks %q: %v", want, err)
+				}
+			}
+			if !dirExists(tk.Worktree) {
+				t.Fatal("refusal removed the worktree")
+			}
+			if head := mustGit(t, tk.Worktree, "rev-parse", "HEAD"); head != sha {
+				t.Fatalf("worktree HEAD moved to %s, was %s", head, sha)
+			}
+			if st, _ := m.Get(tk.ID); st.Status != api.TaskReview {
+				t.Fatalf("status after refusal %s", st.Status)
+			}
+
+			// What the message says to do makes the task shippable, and
+			// the work ends up on the branch.
+			mustGit(t, tk.Worktree, "checkout", "-q", tk.Branch)
+			mustGit(t, tk.Worktree, "merge", "-q", sha)
+			done, err := m.Ship(ctx, tk.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if done.Status != api.TaskDone || dirExists(tk.Worktree) {
+				t.Fatalf("after the fix-up: %+v", done)
+			}
+			if files := mustGit(t, repo, "log", "--name-only", "--format=", tk.Branch); !strings.Contains(files, "work.txt") {
+				t.Fatalf("work not on %s: %s", tk.Branch, files)
+			}
+		})
+	}
+
+	// Keeping the worktree loses nothing, so `done --keep` still works.
+	m, tk := newShipTask(t, repo)
+	mustGit(t, tk.Worktree, detach...)
+	if done, err := m.Done(ctx, tk.ID, DoneOptions{Keep: true}); err != nil || done.Status != api.TaskDone || !dirExists(tk.Worktree) {
+		t.Fatalf("done --keep on a detached HEAD: %v %+v", err, done)
+	}
+}
+
+// A copied file that was committed and then removed in a later commit is
+// gone from the branch's tip but still in what a push sends.
+func TestShipRefusesCopiedFileInHistory(t *testing.T) {
+	testEnv(t)
+	repo := newRepo(t)
+	origin := withOrigin(t, repo)
+	pathWith(t, "")
+	writeFile(t, filepath.Join(repo, ".env"), "TOKEN=hunter2\n", 0o600)
+	writeTaskYAML(t, repo, "copy: [.env]\n")
+	ctx := context.Background()
+
+	m, tk := newShipTask(t, repo)
+	mustGit(t, tk.Worktree, "add", "-f", ".env")
+	mustGit(t, tk.Worktree, "commit", "-q", "-m", "oops")
+	oops := mustGit(t, tk.Worktree, "rev-parse", "--short", "HEAD")
+	mustGit(t, tk.Worktree, "rm", "-q", "--cached", ".env")
+	mustGit(t, tk.Worktree, "commit", "-q", "-m", "remove the secret again")
+	writeFile(t, filepath.Join(tk.Worktree, "a.txt"), "a\n", 0o644)
+
+	got, err := m.Ship(ctx, tk.ID)
+	if err == nil {
+		t.Fatalf("shipped a branch with .env in its history: %+v", got)
+	}
+	for _, want := range []string{"not shipping", ".env", oops, "history"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q: %v", want, err)
+		}
+	}
+	if out := mustGit(t, origin, "for-each-ref", "refs/heads/"+tk.Branch); out != "" {
+		t.Fatalf("the branch was pushed: %s", out)
+	}
+	if st, _ := m.Get(tk.ID); st.Status != api.TaskRunning || !dirExists(tk.Worktree) {
+		t.Fatalf("task after refusal %+v", st)
+	}
+
+	// With the history rewritten, the same work ships.
+	mustGit(t, tk.Worktree, "reset", "-q", "--soft", tk.BaseRef)
+	mustGit(t, tk.Worktree, "reset", "-q")
+	if done, err := m.Ship(ctx, tk.ID); err != nil || done.Status != api.TaskDone {
+		t.Fatalf("after rewriting history: %v %+v", err, done)
+	}
+	if files := mustGit(t, origin, "log", "--name-only", "--format=", "refs/heads/"+tk.Branch); !strings.Contains(files, "a.txt") || strings.Contains(files, ".env") {
+		t.Fatalf("pushed files:\n%s", files)
+	}
+
+	// The same on a side branch the agent merged back in: a push sends
+	// those commits too.
+	m, tk = newShipTask(t, repo)
+	mustGit(t, tk.Worktree, "checkout", "-q", "-b", "scratch")
+	mustGit(t, tk.Worktree, "add", "-f", ".env")
+	mustGit(t, tk.Worktree, "commit", "-q", "-m", "oops")
+	mustGit(t, tk.Worktree, "rm", "-q", "--cached", ".env")
+	mustGit(t, tk.Worktree, "commit", "-q", "-m", "remove the secret again")
+	mustGit(t, tk.Worktree, "checkout", "-q", tk.Branch)
+	writeFile(t, filepath.Join(tk.Worktree, "b.txt"), "b\n", 0o644)
+	mustGit(t, tk.Worktree, "add", "b.txt")
+	mustGit(t, tk.Worktree, "commit", "-q", "-m", "work")
+	mustGit(t, tk.Worktree, "merge", "-q", "--no-ff", "-m", "merge scratch", "scratch")
+	if got, err := m.Ship(ctx, tk.ID); err == nil || !strings.Contains(err.Error(), ".env in its history") {
+		t.Fatalf("merged side branch with .env: %v %+v", err, got)
+	}
+	if out := mustGit(t, origin, "for-each-ref", "refs/heads/"+tk.Branch); out != "" {
+		t.Fatalf("the branch was pushed: %s", out)
+	}
+}
+
 func TestRedact(t *testing.T) {
 	for in, want := range map[string]string{
 		"fatal: unable to access 'https://bob:pw@github.com/x/y.git/'": "fatal: unable to access 'https://***@github.com/x/y.git/'",

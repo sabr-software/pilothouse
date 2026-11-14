@@ -366,14 +366,27 @@ function build(req, opts) {
   function settle(delay) {
     settling.add(current.id);
     setTimeout(() => {
+      // Keyboard focus leaves with the card (folding it away already drops
+      // it): hand it to the next request, or to the page, never to nothing.
+      const held = wrap.contains(document.activeElement);
       card.classList.add('leaving');
       wrap.classList.add('gone');
       setTimeout(() => {
+        const a = document.activeElement;
+        const next = held && (!a || a === document.body || wrap.contains(a)) ? focusAfter() : null;
         settling.delete(current.id);
         wrap.remove();
+        if (next && next.isConnected) next.focus({ preventScroll: true });
         changed();
       }, 380);
     }, delay);
+  }
+  /** Where focus goes when this card is removed: the request after it (or before), else the page. */
+  function focusAfter() {
+    const all = [...document.querySelectorAll('article.req')]
+      .filter((c) => c === card || (c.getClientRects().length > 0 && !c.classList.contains('leaving')));
+    const i = all.indexOf(card);
+    return all[i + 1] || all[i - 1] || document.querySelector('main');
   }
 
   async function send(body, optimistic, haptic) {
@@ -385,7 +398,11 @@ function build(req, opts) {
     inflight.set(id, optimistic);
     settling.add(id);
     showOutcome(optimistic);
+    // A disabled control can't hold focus: the card takes it, so a keyboard
+    // or screen-reader user stays on the request they answered.
+    const had = card.contains(document.activeElement) ? document.activeElement : null;
     setEnabled(false);
+    if (had) card.focus({ preventScroll: true });
     changed();
     const res = await self.PilothouseKeys.respond(id, body);
     busy = false;
@@ -415,6 +432,7 @@ function build(req, opts) {
     clearOutcome();
     setEnabled(current.status === 'open');
     syncValidity();
+    if (had && document.activeElement === card && card.contains(had)) had.focus({ preventScroll: true });
     toast(errorText(res), 'bad');
     changed();
     if (res.status === 401) location.assign('/pair');
@@ -772,7 +790,7 @@ function build(req, opts) {
     // is shown on the request page.
     const metas = [];
     if (opts.keep && r.policy_rule) {
-      metas.push(link('/rules#rule-' + r.policy_rule, { class: 'item', title: 'The rule that asked you' }, icon('shield', 'sm'), 'Rule ', h('b', null, r.policy_rule)));
+      metas.push(link('/rules#rule-' + encodeURIComponent(r.policy_rule), { class: 'item', title: 'The rule that asked you' }, icon('shield', 'sm'), 'Rule ', h('b', null, r.policy_rule)));
     } else if (opts.keep && kind === 'permission') {
       metas.push(h('span', { class: 'item' }, icon('info', 'sm'), `${agentName(r.agent)} asked on its own`));
     }

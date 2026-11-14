@@ -65,8 +65,9 @@ func newLinkAddCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			if asJSON {
-				return json.NewEncoder(out).Encode(c)
+				return json.NewEncoder(jsonOut(out)).Encode(c)
 			}
+			forPrint(&c)
 			if c.URL == "" {
 				fmt.Fprintln(out, "! Remote access is off, so other machines can't reach this one.")
 				fmt.Fprintln(out, "  Run `pilothouse remote tailscale` here first, then `pilothouse link add` again.")
@@ -99,10 +100,10 @@ func newLinkJoinCmd() *cobra.Command {
 				return rmtErr(err, "pilothouse link join")
 			}
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "✓ Linked to %s (%s).\n", j.Hub.Machine, j.Hub.URL)
+			fmt.Fprintf(out, "✓ Linked to %s (%s).\n", oneLineText(j.Hub.Machine), oneLineText(j.Hub.URL))
 			pending := untrusted(j.Devices)
 			if len(pending) == 0 {
-				fmt.Fprintf(out, "%s has no paired devices yet. After you pair one there, run `pilothouse link trust` here.\n", j.Hub.Machine)
+				fmt.Fprintf(out, "%s has no paired devices yet. After you pair one there, run `pilothouse link trust` here.\n", oneLineText(j.Hub.Machine))
 				return nil
 			}
 			return linkConfirm(ctx, cmd, lc, j.Hub.Machine, pending, yes)
@@ -125,10 +126,13 @@ func untrusted(ds []api.LinkDevice) []api.LinkDevice {
 // linkConfirm shows the devices and asks before trusting them.
 func linkConfirm(ctx context.Context, cmd *cobra.Command, lc linkDaemon, hub string, ds []api.LinkDevice, yes bool) error {
 	out := cmd.OutOrStdout()
+	// The hub named itself and its devices. The ids and keys go back to
+	// the daemon as they came, so only what is shown is rewritten.
+	hub = oneLineText(hub)
 	fmt.Fprintf(out, "\nThese devices are paired with %s. Trusted devices can answer this machine's\nrequests, reply to its agents and type into their terminals. Check each key\nagainst the one shown on %s (`pilothouse devices`, or Settings in the app):\n\n", hub, hub)
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	for _, d := range ds {
-		fmt.Fprintf(tw, "  %s\t%s\tkey %s\n", d.Name, d.ID, d.Fingerprint)
+		fmt.Fprintf(tw, "  %s\t%s\tkey %s\n", oneLineText(d.Name), oneLineText(d.ID), oneLineText(d.Fingerprint))
 	}
 	_ = tw.Flush()
 	fmt.Fprintln(out)
@@ -169,13 +173,14 @@ func runLinkLs(cmd *cobra.Command, asJSON bool) error {
 	}
 	out := cmd.OutOrStdout()
 	if asJSON {
-		return json.NewEncoder(out).Encode(st)
+		return json.NewEncoder(jsonOut(out)).Encode(st)
 	}
 	printLinkStatus(out, st)
 	return nil
 }
 
 func printLinkStatus(out io.Writer, st api.LinkStatus) {
+	forPrint(&st)
 	switch {
 	case st.Hub != nil:
 		state := "reachable"
@@ -242,7 +247,7 @@ can see this machine's sessions but not answer, reply or type.`,
 			}
 			pending := untrusted(st.Devices)
 			if len(pending) == 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "Every device of %s is trusted here.\n", st.Hub.Machine)
+				fmt.Fprintf(cmd.OutOrStdout(), "Every device of %s is trusted here.\n", oneLineText(st.Hub.Machine))
 				return nil
 			}
 			return linkConfirm(ctx, cmd, lc, st.Hub.Machine, pending, yes)
@@ -262,7 +267,7 @@ func newLinkRemoveCmd() *cobra.Command {
 			if err != nil {
 				return rmtErr(err, "pilothouse link remove")
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "✓ Unlinked %s.\n", p.Machine)
+			fmt.Fprintf(cmd.OutOrStdout(), "✓ Unlinked %s.\n", oneLineText(p.Machine))
 			return nil
 		},
 	}

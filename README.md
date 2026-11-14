@@ -135,8 +135,8 @@ the prices come from.
 ```sh
 pilothouse remote tailscale      # HTTPS on your tailnet via Tailscale Serve (nothing public)
 pilothouse pair                  # pair a phone; on iOS add it to the Home Screen first, then enter the code
-pilothouse notify telegram       # answer from Telegram: buttons, replies; no Tailscale needed
-pilothouse notify ntfy           # or the ntfy app (Allow / Deny buttons with remote access)
+pilothouse notify telegram       # deny, answer questions and reply from Telegram; allowing opens the app
+pilothouse notify ntfy           # or the ntfy app (Deny button and a link to the app with remote access)
 pilothouse notify test           # check what reaches you
 ```
 
@@ -147,8 +147,9 @@ question and its options, the plan), with risk labels and the agent's last
 words when Pilothouse has them. When a request is answered anywhere, the
 phone's notification is replaced ("✓ Allowed from iPhone") instead of
 lingering with stale buttons. In Telegram, requests arrive with buttons
-(Allow / Allow for session / Deny, question options, plan Approve / Request
-changes), and replying to a "finished" message sends that agent a follow-up.
+(Deny, question options, plan Request changes, and a link to the app for
+allowing, which your paired phone signs), and replying to a "finished"
+message sends that agent a follow-up.
 See [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md).
 
 The app opens on **Today**: a log of every session grouped by what needs you,
@@ -294,7 +295,8 @@ computer, in a new [herdr](https://herdr.dev) tab (or a Terminal window);
   with a timestamp and a single-use nonce.
 - Telegram answers only the one private chat that opened the one-time pairing
   link; every other chat is ignored. Its buttons carry single-use tokens bound
-  to the chat, message, request and action. The bot token stays in
+  to the chat, message, request and action, and none of them allows a tool
+  call or approves a plan. The bot token stays in
   `~/.pilothouse/keys/telegram.json` (0600), never in config, logs or events.
   `notify.telegram.decisions: false` makes it notify-only.
 - **Agents can't approve themselves.**

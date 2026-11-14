@@ -31,7 +31,7 @@ import (
 // Pusher is implemented by *web.Server.
 type Pusher interface {
 	Push(ctx context.Context, n core.Notification) error
-	ActionURL(requestID string, b api.Behavior) string
+	DenyURL(requestID string) string
 	BaseURL() string
 	// PublicURL is the URL reachable off this machine, or "" (local only).
 	PublicURL() string

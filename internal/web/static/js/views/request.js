@@ -212,7 +212,7 @@ export function requestView(id) {
     const info = rules && rules.get(r.policy_rule);
     const where = info && info.source === 'user' ? ' in your policy.yaml' : info && info.source === 'repo' ? ' in this repo’s policy' : info && info.source === 'preset' ? ' from a preset' : info && info.source === 'managed' ? ' you made from Pilothouse' : info && info.source === 'builtin' ? ' built into Pilothouse' : '';
     fill(asked, label('d-asked', 'Why you’re asked'),
-      h('p', null, 'Your rule ', link('/rules#rule-' + r.policy_rule, { class: 'rname' }, r.policy_rule), where,
+      h('p', null, 'Your rule ', link('/rules#rule-' + encodeURIComponent(r.policy_rule), { class: 'rname' }, r.policy_rule), where,
         info && info.description ? [': ', info.description] : ' asked for a person.'));
     if (!rules) loadRules().then((m) => { rules = m; if (m.has(r.policy_rule)) render(); });
   }

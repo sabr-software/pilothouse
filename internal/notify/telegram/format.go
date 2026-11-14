@@ -82,7 +82,7 @@ func (st answerState) selected(i int) bool {
 
 // requestText renders a request. compact drops option descriptions and
 // diffs, for requests too large for one message.
-func requestText(n core.Notification, st answerState, now time.Time, compact bool) string {
+func requestText(n core.Notification, st answerState, now time.Time, compact bool, note string) string {
 	r := n.Request
 	var b strings.Builder
 	switch r.Checkpoint {
@@ -134,7 +134,29 @@ func requestText(n core.Notification, st answerState, now time.Time, compact boo
 			b.WriteString("\n<i>Waiting up to " + strconv.Itoa(int(left.Round(time.Minute).Minutes())) + " min, then it goes back to the terminal.</i>")
 		}
 	}
+	if note != "" && r.Status == api.RequestOpen {
+		b.WriteString("\n<i>" + esc(note) + "</i>")
+	}
 	return b.String()
+}
+
+// approves reports whether answering r "yes" is an approval: allowing a
+// tool or approving a plan. An approval is signed by a paired device, so
+// Telegram links to the app for it; a question's answer is not one.
+func approves(r api.Request) bool {
+	return r.Checkpoint != api.CheckpointQuestion || len(r.Questions) == 0
+}
+
+// allowNote says where an approval happens when the message has no link
+// to the app (no https address to open).
+func allowNote(r api.Request, decisions bool, appURL string) string {
+	if !decisions || appURL != "" || !approves(r) {
+		return ""
+	}
+	if r.Checkpoint == api.CheckpointPlan {
+		return "To approve it, use the Pilothouse app or the computer."
+	}
+	return "To allow it, use the Pilothouse app or the computer."
 }
 
 func writeQuestions(b *strings.Builder, qs []api.Question, st answerState, compact bool) {
@@ -196,12 +218,12 @@ func writePreview(b *strings.Builder, p *api.Preview, compact bool) {
 }
 
 // fitRequest renders a request within the message limit.
-func fitRequest(n core.Notification, st answerState, now time.Time) string {
-	s := requestText(n, st, now, false)
+func fitRequest(n core.Notification, st answerState, now time.Time, note string) string {
+	s := requestText(n, st, now, false, note)
 	if utf8.RuneCountInString(s) <= maxText {
 		return s
 	}
-	s = requestText(n, st, now, true)
+	s = requestText(n, st, now, true, note)
 	if utf8.RuneCountInString(s) <= maxText {
 		return s
 	}
@@ -279,9 +301,16 @@ type buttonSpec struct {
 }
 
 // requestKeyboard lays out the buttons for a request. decisions=false
-// leaves only the link to the web app.
+// leaves only the link to the web app. Allowing a tool and approving a
+// plan are links to the app, where the device signs them; the buttons that
+// answer from here deny, ask for changes or answer a question.
 func requestKeyboard(r api.Request, st answerState, decisions bool, appURL string) keyboardSpec {
 	var kb keyboardSpec
+	link := ""
+	if appURL != "" {
+		link = appURL + "/r/" + r.ID
+	}
+	linked := false // the keyboard already has the link to the app
 	if decisions && r.Status == api.RequestOpen {
 		switch {
 		case r.Checkpoint == api.CheckpointQuestion && len(r.Questions) > 0:
@@ -306,19 +335,25 @@ func requestKeyboard(r api.Request, st answerState, decisions bool, appURL strin
 				}
 			}
 		case r.Checkpoint == api.CheckpointPlan:
-			kb = append(kb, []buttonSpec{{text: "✅ Approve", action: "approve"}, {text: "✎ Request changes", action: "changes"}})
+			var row []buttonSpec
+			if link != "" {
+				row, linked = append(row, buttonSpec{text: "✅ Approve in the app", url: link}), true
+			}
+			kb = append(kb, append(row, buttonSpec{text: "✎ Request changes", action: "changes"}))
 		default:
-			kb = append(kb,
-				[]buttonSpec{{text: "✅ Allow", action: "allow"}, {text: "Allow for session", action: "session"}},
-				[]buttonSpec{{text: "❌ Deny", action: "deny"}})
+			var row []buttonSpec
+			if link != "" {
+				row, linked = append(row, buttonSpec{text: "✅ Allow in the app", url: link}), true
+			}
+			kb = append(kb, append(row, buttonSpec{text: "❌ Deny", action: "deny"}))
 		}
 	}
-	if appURL != "" {
+	if link != "" && !linked {
 		label := "Open in the app"
 		if r.Checkpoint == api.CheckpointQuestion && decisions {
 			label = "Answer in the app"
 		}
-		kb = append(kb, []buttonSpec{{text: label, url: appURL + "/r/" + r.ID}})
+		kb = append(kb, []buttonSpec{{text: label, url: link}})
 	}
 	return kb
 }

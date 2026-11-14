@@ -126,18 +126,25 @@ func cleanName(n string) string {
 	return strings.TrimSpace(n)
 }
 
-// clientKey identifies the caller for rate limiting. Tailscale Serve puts
-// the tailnet peer address in X-Forwarded-For; only loopback peers (that
-// is, the proxy) are trusted to set it.
+// clientKey identifies the caller for rate limiting. A proxy on this
+// computer (Tailscale Serve, a tunnel) puts the caller's address in
+// X-Forwarded-For; only loopback peers (that is, the proxy) are trusted to
+// set it. Proxies that append keep whatever the caller sent in front, so
+// only the last address, the one the proxy wrote itself, counts.
 func clientKey(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
 	}
 	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			first, _, _ := strings.Cut(xff, ",")
-			return strings.TrimSpace(first)
+		if vals := r.Header.Values("X-Forwarded-For"); len(vals) > 0 {
+			last := vals[len(vals)-1]
+			if i := strings.LastIndexByte(last, ','); i >= 0 {
+				last = last[i+1:]
+			}
+			if fwd := net.ParseIP(strings.TrimSpace(last)); fwd != nil {
+				return fwd.String()
+			}
 		}
 	}
 	return host

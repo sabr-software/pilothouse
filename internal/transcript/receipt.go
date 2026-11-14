@@ -24,7 +24,9 @@ type step struct {
 	result         string
 	isError        bool
 	pending        bool
+	lost           bool // the call ended and its result never reached us
 	denied         bool
+	side           bool // a subagent's call: only its edits count, for freshness
 	edits          []fileEdit
 	added, removed int // when the source has no per-edit counts
 	paths          []string
@@ -44,81 +46,70 @@ var (
 	passCount = regexp.MustCompile(`(?i)\b(\d+)\s+(?:passed|passing|tests? passed)\b`)
 )
 
-// lintRunner and buildRunner name the check as people say it, or "".
-func lintRunner(command string) string  { return runnerName(lintCommand, command) }
-func buildRunner(command string) string { return runnerName(buildCommand, command) }
-
 // checkCommands recognise each kind of check in a command.
 var checkCommands = map[string]*regexp.Regexp{"tests": testCommand, "lint": lintCommand, "build": buildCommand}
 
 // stepCheck is a finished command's result as a check, for the activity
-// feed, or "": its first check, tests before lint before build.
+// feed, or "": the worst result among the checks in it.
 func stepCheck(command, output string, isError bool) string {
-	head := commandHead(command)
-	for _, kind := range []string{"tests", "lint", "build"} {
-		if name, end := runnerAt(checkCommands[kind], head); name != "" {
-			return step{command: command, result: output, isError: isError}.checkStatus(kind, head, end)
-		}
-	}
-	return ""
+	j, _ := worst(step{command: command, result: output, isError: isError}.checks(), "")
+	return j.status
 }
 
 // commandHead is what a shell command runs, for recognising checks: the
 // text before any heredoc, with quoted strings blanked, so a script that
-// merely mentions "go test" (python3 - <<'EOF' …) isn't a test run.
+// merely mentions "go test" (python3 - <<'EOF' …) isn't a test run. Every
+// byte keeps its place: an offset in the head is the same one in command.
 func commandHead(command string) string {
 	if i := strings.Index(command, "<<"); i >= 0 {
 		command = command[:i]
 	}
-	var b strings.Builder
-	var quote rune
-	for _, r := range command {
+	if !strings.ContainsAny(command, `'"`) {
+		return command
+	}
+	b := []byte(command)
+	var quote byte
+	for i, c := range b {
 		switch {
 		case quote != 0:
-			if r == quote {
+			if c == quote {
 				quote = 0
 			}
-			b.WriteByte(' ')
-		case r == '\'' || r == '"':
-			quote = r
-			b.WriteByte(' ')
-		default:
-			b.WriteRune(r)
+			b[i] = ' '
+		case c == '\'' || c == '"':
+			quote = c
+			b[i] = ' '
 		}
 	}
-	return b.String()
-}
-
-func runnerName(re *regexp.Regexp, command string) string {
-	name, _ := runnerAt(re, command)
-	return name
-}
-
-// runnerAt names the check in command and says where its runner ends.
-func runnerAt(re *regexp.Regexp, command string) (name string, end int) {
-	m := re.FindStringSubmatchIndex(command)
-	if m == nil {
-		return "", 0
-	}
-	return strings.Join(strings.Fields(command[m[2]:m[3]]), " "), m[3]
+	return string(b)
 }
 
 // commitSubject returns the first line of a git commit's message, "" when
 // the command commits without -m, and ok=false when it isn't a commit.
+// The commit is looked for in what the command runs, not in the megabytes
+// a heredoc may carry, and the message is read no further than its line.
 func commitSubject(command string) (subject string, ok bool) {
-	loc := commitCommand.FindStringIndex(command)
+	loc := commitCommand.FindStringIndex(commandHead(command))
 	if loc == nil {
 		return "", false
 	}
 	rest := command[loc[1]:]
 	if i := strings.Index(rest, "<<"); i >= 0 { // -m "$(cat <<'EOF' … EOF)"
-		lines := strings.Split(rest[i:], "\n")
-		for _, l := range lines[1:] {
-			if l = strings.TrimSpace(l); l != "" {
-				return l, true
+		body := rest[i:]
+		for {
+			nl := strings.IndexByte(body, '\n')
+			if nl < 0 {
+				return "", true
+			}
+			body = body[nl+1:]
+			line := body
+			if end := strings.IndexByte(body, '\n'); end >= 0 {
+				line = body[:end]
+			}
+			if line = strings.TrimSpace(line); line != "" {
+				return line, true
 			}
 		}
-		return "", true
 	}
 	m := commitMessage.FindStringSubmatch(rest)
 	if m == nil {
@@ -157,98 +148,146 @@ func isRead(s step) bool {
 	return s.kind == api.ToolShell && readCommand.MatchString(s.command)
 }
 
-// buildReceipt folds a turn's tool calls, oldest first, into a receipt.
-func buildReceipt(turn int, since time.Time, steps []step) *api.Receipt {
-	rc := &api.Receipt{Turn: turn, Since: since}
-	type tally struct {
-		last   *api.Check
-		failed int // failed runs before the last one
+// maxTurnFiles bounds the paths a turn's tally remembers.
+const maxTurnFiles = 5000
+
+// tally is one kind of check over a turn.
+type tally struct {
+	last   *api.Check // never changed once set: copies of a tally share it
+	failed int        // failed runs before the last one
+}
+
+// turnTally folds a turn's tool calls, oldest first, into a receipt. The
+// feed keeps one for the calls of the latest turn it no longer holds, so a
+// long turn's receipt still has its early checks and its counts.
+type turnTally struct {
+	rc       api.Receipt // the counts; the rest is filled in by receipt
+	checks   map[string]tally
+	files    map[string]bool
+	base     map[string]bool // files of the tally this one continues
+	lastEdit time.Time
+}
+
+func newTurnTally() *turnTally {
+	return &turnTally{checks: map[string]tally{}, files: map[string]bool{}}
+}
+
+// extend is a tally that continues a and leaves it as it is. A nil a is a
+// turn's start.
+func (a *turnTally) extend() *turnTally {
+	n := newTurnTally()
+	if a == nil {
+		return n
 	}
-	checks := map[string]*tally{"tests": {}, "lint": {}, "build": {}}
-	files := map[string]bool{}
-	var lastEdit time.Time
-	for _, s := range steps {
-		switch {
-		case s.denied:
-			rc.Blocked++
-			continue
-		case s.isError && !s.pending && s.kind != api.ToolShell:
-			rc.Failed++
-			continue
+	n.rc, n.lastEdit, n.base = a.rc, a.lastEdit, a.files
+	for kind, t := range a.checks {
+		n.checks[kind] = t
+	}
+	return n
+}
+
+func (a *turnTally) file(path string) {
+	if !a.base[path] && len(a.files) < maxTurnFiles {
+		a.files[path] = true
+	}
+}
+
+// add counts one tool call.
+func (a *turnTally) add(s step) {
+	rc := &a.rc
+	if s.side {
+		// A subagent's calls aren't the turn's own, but an edit it made
+		// changed the code the turn's checks ran on.
+		if s.kind == api.ToolEdit && !s.isError && !s.denied && s.at.After(a.lastEdit) {
+			a.lastEdit = s.at
 		}
-		switch {
-		case isSearch(s):
-			rc.Searches++
-		case isRead(s):
-			rc.Reads++
+		return
+	}
+	switch {
+	case s.denied:
+		rc.Blocked++
+		return
+	case s.isError && !s.pending && s.kind != api.ToolShell:
+		rc.Failed++
+		return
+	}
+	switch {
+	case isSearch(s):
+		rc.Searches++
+	case isRead(s):
+		rc.Reads++
+	}
+	if s.kind == api.ToolEdit && !s.isError {
+		rc.Edits++
+		if s.at.After(a.lastEdit) {
+			a.lastEdit = s.at
 		}
-		if s.kind == api.ToolEdit && !s.isError {
-			rc.Edits++
-			if s.at.After(lastEdit) {
-				lastEdit = s.at
-			}
-			for _, e := range s.edits {
-				files[e.path] = true
-				rc.Added += e.added
-				rc.Removed += e.removed
-			}
-			for _, p := range s.paths {
-				files[p] = true
-			}
-			rc.Added += s.added
-			rc.Removed += s.removed
+		for _, e := range s.edits {
+			a.file(e.path)
+			rc.Added += e.added
+			rc.Removed += e.removed
 		}
-		if s.kind != api.ToolShell || s.command == "" {
-			continue
+		for _, p := range s.paths {
+			a.file(p)
 		}
-		if subj, ok := commitSubject(s.command); ok && commitCommand.MatchString(commandHead(s.command)) && !s.isError && !s.pending {
-			rc.Commit = subj
-			if rc.Commit == "" {
-				rc.Commit = "(no message)"
-			}
-		}
-		head := commandHead(s.command)
-		for kind, re := range checkCommands {
-			name, end := runnerAt(re, head)
-			if name == "" {
-				continue
-			}
-			t := checks[kind]
-			if t.last != nil && t.last.Status == checkFailed {
-				t.failed++
-			}
-			c := &api.Check{Name: name, Command: s.command, At: s.at, Status: s.checkStatus(kind, head, end)}
-			if kind == "tests" && c.Status == checkPassed {
-				c.Count = testsPassed(s.result)
-			}
-			t.last = c
-		}
-		// A search that finds nothing exits 1: not a failure worth counting.
-		if s.isError && !s.pending && !isSearch(s) && testRunner(head) == "" && lintRunner(head) == "" && buildRunner(head) == "" {
-			rc.Failed++
+		rc.Added += s.added
+		rc.Removed += s.removed
+	}
+	if s.kind != api.ToolShell || s.command == "" {
+		return
+	}
+	if subj, ok := commitSubject(s.command); ok && !s.isError && !s.pending {
+		rc.Commit = subj
+		if rc.Commit == "" {
+			rc.Commit = "(no message)"
 		}
 	}
-	rc.Files = len(files)
-	if !lastEdit.IsZero() {
-		le := lastEdit
+	js := s.checks()
+	for _, kind := range checkKinds {
+		// A command's verdict for a kind is its worst run's, under that
+		// run's name.
+		j, ok := worst(js, kind)
+		if !ok {
+			continue
+		}
+		t := a.checks[kind]
+		if t.last != nil && t.last.Status == checkFailed {
+			t.failed++
+		}
+		t.last = &api.Check{Name: j.name, Command: s.command, At: s.at, Status: j.status}
+		if kind == "tests" && j.status == checkPassed {
+			t.last.Count = testsPassed(s.result)
+		}
+		a.checks[kind] = t
+	}
+	// A search that finds nothing exits 1: not a failure worth counting.
+	if s.isError && !s.pending && !isSearch(s) && len(js) == 0 {
+		rc.Failed++
+	}
+}
+
+// receipt is the turn so far.
+func (a *turnTally) receipt(turn int, since time.Time) *api.Receipt {
+	rc := a.rc
+	rc.Turn, rc.Since, rc.Files = turn, since, len(a.base)+len(a.files)
+	if !a.lastEdit.IsZero() {
+		le := a.lastEdit
 		rc.LastEdit = &le
 	}
-	for kind, t := range checks {
-		if t.last == nil {
-			continue
-		}
-		t.last.FailedBefore = t.failed
-		t.last.Fresh = lastEdit.IsZero() || t.last.At.After(lastEdit)
+	for kind, t := range a.checks {
+		c := *t.last
+		c.FailedBefore = t.failed
+		c.Fresh = a.lastEdit.IsZero() || c.At.After(a.lastEdit)
 		switch kind {
 		case "tests":
-			rc.Tests = t.last
+			rc.Tests = &c
 		case "lint":
-			rc.Lint = t.last
+			rc.Lint = &c
 		case "build":
-			rc.Build = t.last
+			rc.Build = &c
 		}
 	}
-	return rc
+	return &rc
 }
 
 // output is a tool call's output, as much as the feed still has.
@@ -259,35 +298,49 @@ func (f *feed) output(it *item) string {
 	return it.Result
 }
 
+// step is a feed item as a receipt counts it. ok is false for what it
+// doesn't count: prompts and replies, questions and plans, and a
+// subagent's calls other than its edits.
+func (f *feed) step(it *item) (s step, ok bool) {
+	if it.Kind != api.ActivityTool || it.asks > 0 || it.plan || (it.Sidechain && it.ToolKind != api.ToolEdit) {
+		return s, false
+	}
+	return step{at: it.At, kind: it.ToolKind, tool: it.Tool, command: it.command, result: f.output(it),
+		isError: it.IsError, pending: it.Pending, lost: it.lost, denied: it.denied, side: it.Sidechain, edits: it.edits}, true
+}
+
 // receipt is the receipt of the feed's latest turn.
 func (f *feed) receipt() *api.Receipt {
 	turn, since := 0, time.Time{}
-	for i := len(f.items) - 1; i >= 0; i-- {
-		if it := f.items[i]; it.Kind == api.ActivityPrompt && !it.Sidechain {
-			turn, since = it.Turn, it.At
-			break
-		}
+	if p := f.lastPrompt; p != nil {
+		turn, since = p.Turn, p.At
 	}
-	var steps []step
+	a := f.early.extend()
 	for _, it := range f.items {
-		if it.At.Before(since) || it.Sidechain || it.Kind != api.ActivityTool || it.asks > 0 || it.plan {
+		if it.At.Before(since) {
 			continue
 		}
-		s := step{at: it.At, kind: it.ToolKind, tool: it.Tool, command: it.command, result: f.output(it),
-			isError: it.IsError, pending: it.Pending, denied: it.denied}
-		for _, e := range it.edits {
-			s.edits = append(s.edits, fileEdit{path: e.path, op: e.op, added: e.added, removed: e.removed})
+		if s, ok := f.step(it); ok {
+			a.add(s)
 		}
-		steps = append(steps, s)
 	}
-	return buildReceipt(turn, since, steps)
+	return a.receipt(turn, since)
 }
+
+// checkInput is a command and its output in full, for a source whose items
+// only carry a one-line summary and the output's tail.
+type checkInput struct{ command, output string }
 
 // ReceiptOf builds the latest turn's receipt from feed items, for sources
 // without a transcript feed of their own (OpenCode, the demo). Shell
 // commands come from "Run: …" summaries; files from "Edit …" summaries,
 // with line counts from files when given (keyed by path).
 func ReceiptOf(items []api.ActivityItem, files []api.FileChange) *api.Receipt {
+	return receiptOf(items, files, nil)
+}
+
+// receiptOf is ReceiptOf with the commands a summary cuts short, by item ID.
+func receiptOf(items []api.ActivityItem, files []api.FileChange, full map[string]checkInput) *api.Receipt {
 	turn, since := 0, time.Time{}
 	for i := len(items) - 1; i >= 0; i-- {
 		if it := items[i]; it.Kind == api.ActivityPrompt && !it.Sidechain {
@@ -300,14 +353,17 @@ func ReceiptOf(items []api.ActivityItem, files []api.FileChange) *api.Receipt {
 		counts[fc.Path] = fc
 	}
 	seen := map[string]bool{}
-	var steps []step
+	a := newTurnTally()
 	for _, it := range items {
-		if it.At.Before(since) || it.Sidechain || it.Kind != api.ActivityTool {
+		if it.At.Before(since) || it.Kind != api.ActivityTool || (it.Sidechain && it.ToolKind != api.ToolEdit) {
 			continue
 		}
-		s := step{at: it.At, kind: it.ToolKind, tool: it.Tool, result: it.Result, isError: it.IsError, pending: it.Pending}
+		s := step{at: it.At, kind: it.ToolKind, tool: it.Tool, result: it.Result, isError: it.IsError, pending: it.Pending, side: it.Sidechain}
 		if s.kind == api.ToolShell {
 			s.command = strings.TrimSpace(strings.TrimPrefix(it.Summary, "Run:"))
+			if in, ok := full[it.ID]; ok {
+				s.command, s.result = in.command, in.output
+			}
 		}
 		if s.isError && deniedText.MatchString(it.Result) {
 			s.denied = true
@@ -326,9 +382,9 @@ func ReceiptOf(items []api.ActivityItem, files []api.FileChange) *api.Receipt {
 				}
 			}
 		}
-		steps = append(steps, s)
+		a.add(s)
 	}
-	return buildReceipt(turn, since, steps)
+	return a.receipt(turn, since)
 }
 
 // deniedText recognises a refusal in a tool result.

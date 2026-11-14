@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/sabr-software/pilothouse/internal/api"
+	"github.com/sabr-software/pilothouse/internal/termsafe"
 )
 
 // Views for questions, plans and activity (ask.go).
@@ -53,7 +54,7 @@ func (m *Model) viewQuestion(w, h int) []string {
 		if head != "" {
 			head += " · "
 		}
-		head += q.Header
+		head += oneLine(q.Header)
 	}
 	if q.MultiSelect {
 		if head != "" {
@@ -71,7 +72,7 @@ func (m *Model) viewQuestion(w, h int) []string {
 
 	labelW := 0
 	for _, o := range q.Options {
-		labelW = max(labelW, lipgloss.Width(o.Label))
+		labelW = max(labelW, lipgloss.Width(oneLine(o.Label)))
 	}
 	labelW = min(max(labelW, 8), max(10, inner/2))
 	for i := 0; i < choices(q); i++ {
@@ -93,7 +94,7 @@ func (m *Model) viewQuestion(w, h int) []string {
 		num := fmt.Sprintf("%d ", i+1)
 		label, desc := "Other…", "type your own answer (o)"
 		if i < len(q.Options) {
-			label, desc = q.Options[i].Label, q.Options[i].Description
+			label, desc = oneLine(q.Options[i].Label), q.Options[i].Description
 		} else {
 			num = "  "
 		}
@@ -122,7 +123,7 @@ func (m *Model) previousAnswers(req api.Request) string {
 	var parts []string
 	for _, q := range req.Questions[:min(m.ask.qi, len(req.Questions))] {
 		if a, ok := m.ask.answers[q.Key()]; ok {
-			parts = append(parts, oneLine(q.Text)+" → "+a)
+			parts = append(parts, oneLine(q.Text)+" → "+oneLine(a))
 		}
 	}
 	if len(parts) == 0 {
@@ -180,8 +181,8 @@ func (m *Model) viewPlan(w, h int) []string {
 func (m *Model) renderMarkdown(md string, w int) []string {
 	var out []string
 	code, blank := false, true
-	for _, raw := range strings.Split(strings.ReplaceAll(md, "\r", ""), "\n") {
-		line := strings.TrimRight(strings.ReplaceAll(raw, "\t", "    "), " ")
+	for _, raw := range strings.Split(strings.ReplaceAll(md, "\r\n", "\n"), "\n") {
+		line := termsafe.Escape(strings.TrimRight(strings.ReplaceAll(raw, "\t", "    "), " ")) // see oneLine
 		t := strings.TrimSpace(line)
 		if strings.HasPrefix(t, "```") {
 			code = !code
@@ -292,7 +293,7 @@ func (m *Model) detailAsk(r *row, w, h int) []string {
 			lines = append(lines, "  "+m.st.bold.Render(trunc(text, inner)))
 			var opts []string
 			for i, o := range qq.Options {
-				opts = append(opts, m.st.key.Render(fmt.Sprint(i+1))+" "+o.Label)
+				opts = append(opts, m.st.key.Render(fmt.Sprint(i+1))+" "+oneLine(o.Label))
 			}
 			if qq.AllowOther {
 				opts = append(opts, m.st.dim.Render("or your own words"))

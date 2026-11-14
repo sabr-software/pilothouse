@@ -127,6 +127,9 @@ type linkFixture struct {
 	deviceID  string
 	notes     *captureNotifier
 	joined    api.LinkJoined
+	// hubOffline stops the hub's calls to its machines, for tests that
+	// play the hub themselves.
+	hubOffline func()
 }
 
 // linkMachines pairs a phone with a hub "studio" and links "laptop" to it.
@@ -137,7 +140,8 @@ func linkMachines(t *testing.T, peerMut ...func(*Deps)) *linkFixture {
 	peer := newLiveEnv(t, "laptop", peerMut...)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	hub.srv.StartLinks(ctx)
+	hubCtx, hubOffline := context.WithCancel(ctx)
+	hub.srv.StartLinks(hubCtx)
 	peer.srv.StartLinks(ctx)
 	notes := &captureNotifier{}
 	hub.srv.SetNotifier(notes)
@@ -163,7 +167,7 @@ func linkMachines(t *testing.T, peerMut ...func(*Deps)) *linkFixture {
 	}
 	var j api.LinkJoined
 	mustJSON(t, w, &j)
-	return &linkFixture{hub: hub, peer: peer, key: k, cookie: cookie, deviceID: id, notes: notes, joined: j}
+	return &linkFixture{hub: hub, peer: peer, key: k, cookie: cookie, deviceID: id, notes: notes, joined: j, hubOffline: hubOffline}
 }
 
 func hasSession(s api.Snapshot, id string) bool {
@@ -415,6 +419,10 @@ func TestLinkNewDeviceKeyNeedsTrust(t *testing.T) {
 	f := linkMachines(t)
 	f.followed(t)
 	trustAll(t, f.peer)
+	// From here the test plays the hub. The real one must stay quiet: a
+	// list it sent now would be refused as stale, and it would send again
+	// above the version used below.
+	f.hubOffline()
 	// The hub sends a changed key for the same device (paired again,
 	// restored): the laptop stops trusting it until confirmed again.
 	ctx := context.Background()

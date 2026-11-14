@@ -28,9 +28,19 @@ func TestGrantPrefix(t *testing.T) {
 		want string
 	}{
 		{api.ToolShell, "git push origin main", "git push"},
-		{api.ToolShell, "git -C /x push", "git push"},
+		{api.ToolShell, "git -C web push", "git push"},
+		// A directory that may be outside the session's folder: exact.
+		{api.ToolShell, "git -C /x push", "git -C /x push"},
+		{api.ToolShell, "git -C ../x push", "git -C ../x push"},
 		{api.ToolShell, "git -c user.name=x commit -m wip", "git commit"},
-		{api.ToolShell, "git --git-dir=/r/.git --no-pager log", "git log"},
+		{api.ToolShell, "git --git-dir=sub/.git --no-pager log", "git log"},
+		{api.ToolShell, "git --git-dir=/r/.git --no-pager log", "git --git-dir=/r/.git --no-pager log"},
+		// A setting that can run a program: exact.
+		{api.ToolShell, "git -c core.pager=less log", "git -c core.pager=less log"},
+		// An unknown program's second word may be an argument: exact.
+		{api.ToolShell, "ssh host", "ssh host"},
+		{api.ToolShell, "NODE_ENV=test npm test", "NODE_ENV=test npm test"},
+		{api.ToolShell, "sudo rm build", "sudo rm build"},
 		{api.ToolShell, "git --unknown-flag commit", "git --unknown-flag commit"},
 		{api.ToolShell, "git -x", "git -x"},
 		{api.ToolShell, "npm --prefix web run build", "npm run"},
@@ -48,7 +58,7 @@ func TestGrantPrefix(t *testing.T) {
 		{api.ToolEdit, "", ""},
 	}
 	for _, tt := range tests {
-		if got := grantPrefix(api.Request{ToolKind: tt.kind, Command: tt.cmd}); got != tt.want {
+		if got := grantPrefix(api.Request{ToolKind: tt.kind, Command: tt.cmd}, ""); got != tt.want {
 			t.Errorf("grantPrefix(%q) = %q, want %q", tt.cmd, got, tt.want)
 		}
 	}
@@ -65,7 +75,10 @@ func TestGrantNeverCoversWholeProgram(t *testing.T) {
 		{"git -c user.name=x commit -m wip", "git tag -d v1", false},
 		{"git -c user.name=x commit -m wip", "git push --force", false},
 		{"git -c user.name=x commit -m wip", "git commit --amend", true},
-		{"git -c user.name=x commit -m wip", "git -c a=b commit -m other", true},
+		{"git -c user.name=x commit -m wip", "git -c user.email=a@b.c commit -m other", true},
+		// A setting that isn't known to be harmless is never covered by a key.
+		{"git -c user.name=x commit -m wip", "git -c a=b commit -m other", false},
+		{"git -c user.name=x commit -m wip", "git -c core.editor=/tmp/x commit", false},
 		{"git -C dir push", "git push origin main", true},
 		{"git -C dir push", "git reset --hard", false},
 		{"npm --prefix x run build", "npm publish", false},
@@ -83,7 +96,7 @@ func TestGrantNeverCoversWholeProgram(t *testing.T) {
 	}
 	for _, tt := range tests {
 		req := api.Request{Tool: "Bash", ToolKind: api.ToolShell, Command: tt.granted}
-		g := api.Grant{ID: "g_1", Tool: "Bash", Prefix: grantPrefix(req)}
+		g := api.Grant{ID: "g_1", Tool: "Bash", Prefix: grantPrefix(req, "")}
 		if _, ok := matchGrant([]api.Grant{g}, "Bash", api.ToolShell, tt.call); ok != tt.want {
 			t.Errorf("grant from %q (prefix %q) covers %q = %v, want %v", tt.granted, g.Prefix, tt.call, ok, tt.want)
 		}
@@ -103,7 +116,9 @@ func TestMatchGrant(t *testing.T) {
 	}{
 		{"Bash", "git push origin main", api.ToolShell, "g_push"},
 		{"Bash", "git push", api.ToolShell, "g_push"},
-		{"Bash", "git -C /repo push", api.ToolShell, "g_push"},
+		{"Bash", "git -C sub push", api.ToolShell, "g_push"},
+		{"Bash", "git -C /repo push", api.ToolShell, ""}, // maybe another repository
+		{"Bash", "git push --force", api.ToolShell, ""},  // riskier than the grant
 		{"Bash", "git pushx", api.ToolShell, ""},
 		{"Bash", "git status", api.ToolShell, ""},
 		{"Bash", "git push; rm -rf ~", api.ToolShell, ""},

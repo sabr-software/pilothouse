@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -104,6 +105,43 @@ func TestEditReplaceAllAndMultiEdit(t *testing.T) {
 	}
 }
 
+// A replace_all multiplies: a small input against a file of many matches
+// asks for hundreds of megabytes. The preview runs on the hook path and
+// must not build that just to find out it is too big to diff.
+func TestReplaceAllDoesNotBuildAHugeFile(t *testing.T) {
+	f := newFixture(t)
+	f.write("dots.txt", strings.Repeat(".", 200<<10))
+	f.write("small.txt", "a.b.c\n")
+	alloc := func() uint64 {
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
+		return ms.TotalAlloc
+	}
+	for name, input := range map[string]map[string]any{
+		"Edit": {"file_path": "dots.txt", "old_string": ".", "new_string": strings.Repeat("x", 1200) + "\n", "replace_all": true},
+		// Each step is small enough alone; together they are not.
+		"MultiEdit": {"file_path": "dots.txt", "edits": []map[string]any{
+			{"old_string": ".", "new_string": "::::", "replace_all": true},
+			{"old_string": ":", "new_string": strings.Repeat("y", 300) + "\n", "replace_all": true},
+		}},
+	} {
+		before := alloc()
+		fp := one(t, f.build(name, input))
+		if got := alloc() - before; got > 32<<20 {
+			t.Errorf("%s: allocated %d MiB for a preview", name, got>>20)
+		}
+		// What is shown is the change as asked for, marked as not the whole story.
+		if !fp.Truncated || fp.Op != api.FileEdit || !strings.Contains(fp.Diff, "\n-.\n+") || len(fp.Diff) > MaxDiffBytes {
+			t.Errorf("%s: truncated=%v op=%s, %d bytes of diff", name, fp.Truncated, fp.Op, len(fp.Diff))
+		}
+	}
+	// One that fits is still applied to the file.
+	fp := one(t, f.build("Edit", map[string]any{"file_path": "small.txt", "old_string": ".", "new_string": "::", "replace_all": true}))
+	if fp.Diff != "@@ -1 +1 @@\n-a.b.c\n+a::b::c\n" || fp.Truncated {
+		t.Errorf("small replace_all: %+v", fp)
+	}
+}
+
 func TestEditStaleOrUnreadableFallsBackToInput(t *testing.T) {
 	f := newFixture(t)
 	f.write("b.txt", "unrelated\n")
@@ -148,6 +186,48 @@ func TestSecretsAndPrivateFilesAreNeverRead(t *testing.T) {
 	fp = one(t, f.build("Write", map[string]any{"file_path": key, "content": "x\n"}))
 	if strings.Contains(fp.Diff, "PRIVATE KEY") {
 		t.Fatalf("ssh key read: %q", fp.Diff)
+	}
+}
+
+// macOS and Windows file systems ignore case, so .ENV is .env and
+// ~/.SSH is ~/.ssh: a path spelled differently must not get a secret read
+// into the preview.
+func TestSecretPathsWhateverTheirCase(t *testing.T) {
+	f := newFixture(t)
+	leaks := func(fp api.FilePreview) bool {
+		return strings.Contains(fp.Diff, "supersecret") || fp.Removed > 1
+	}
+	for _, name := range []string{".ENV", ".Envrc", "deploy/.Env.Local", "server.PEM", "Credentials.JSON"} {
+		f.write(name, "API_KEY=supersecret\nDEBUG=1\nOTHER=2\n")
+		fp := one(t, f.build("Edit", map[string]any{"file_path": name, "old_string": "DEBUG=1", "new_string": "DEBUG=0"}))
+		if leaks(fp) || fp.Diff != "@@ -1 +1 @@\n-DEBUG=1\n+DEBUG=0\n" {
+			t.Errorf("%s context read: %q", name, fp.Diff)
+		}
+		if fp = one(t, f.build("Write", map[string]any{"file_path": name, "content": "x\n"})); leaks(fp) || fp.Op != api.FileOverwrite {
+			t.Errorf("%s overwritten with its content shown: %+v", name, fp)
+		}
+	}
+	// The real names, reached through another spelling. Where the file
+	// system tells them apart there is no such file and nothing to read.
+	f.write(".env", "API_KEY=supersecret\nDEBUG=1\n")
+	f.write(filepath.Join(f.priv, "config.yaml"), "token: supersecret\nweb: x\n")
+	f.write(filepath.Join(f.home, ".ssh", "deploy"), "supersecret\nkey\n")
+	f.write(filepath.Join(f.home, ".claude", "settings.json"), "{\"k\":\"supersecret\"}\n")
+	for _, p := range []string{
+		".Env",
+		filepath.Join(f.home, ".Pilothouse", "config.yaml"),
+		filepath.Join(strings.ToUpper(f.priv), "CONFIG.YAML"),
+		filepath.Join(f.home, ".SSH", "deploy"),
+		filepath.Join(f.home, ".Claude", "Settings.json"),
+	} {
+		if fp := one(t, f.build("Write", map[string]any{"file_path": p, "content": "x\n"})); leaks(fp) {
+			t.Errorf("%s read: %+v", p, fp)
+		}
+	}
+	// Folding case does not make ordinary files private.
+	f.write("Env.go", "package env\n\nvar Debug = 1\n")
+	if fp := one(t, f.build("Edit", map[string]any{"file_path": "Env.go", "old_string": "Debug = 1", "new_string": "Debug = 0"})); !strings.Contains(fp.Diff, " package env\n") {
+		t.Errorf("Env.go context not read: %q", fp.Diff)
 	}
 }
 
@@ -312,6 +392,34 @@ func TestApplyPatch(t *testing.T) {
 	fp := one(t, p)
 	if fp.Diff != "@@ -1,2 +1,2 @@ func x() {\n a\n-b\n+c\n" {
 		t.Fatalf("fallback: %q", fp.Diff)
+	}
+}
+
+// A hunk of repeated lines against a file of the same lines makes the
+// search for it quadratic: every position matches until the hunk's last
+// line. The preview is on the hook path, so it gives up on placing the hunk
+// and shows it as written instead.
+func TestApplyPatchSearchIsBounded(t *testing.T) {
+	f := newFixture(t)
+	f.write("blank.txt", strings.Repeat("\n", 200000))
+	patch := "*** Begin Patch\n*** Update File: blank.txt\n@@\n" + strings.Repeat(" \n", 100000) + "-not in the file\n+x\n*** End Patch\n"
+	done := make(chan *api.Preview, 1)
+	go func() { done <- f.build("apply_patch", map[string]any{"command": patch}) }()
+	select {
+	case p := <-done:
+		if fp := one(t, p); fp.Removed != 1 || fp.Added != 1 || !fp.Truncated || fp.Op != api.FileEdit {
+			t.Fatalf("fallback: %+v", fp)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("still searching for the hunk after 10s")
+	}
+
+	// The bound is on wasted work, not on size: a big file whose hunks need
+	// the loosest match, at its far end, is still placed.
+	f.write("big.txt", numbered(20000))
+	fp := one(t, f.build("apply_patch", map[string]any{"command": "*** Begin Patch\n*** Update File: big.txt\n@@ line 19990\n-  line 19991  \n+changed\n@@\n-\tline 19999\n+also changed\n*** End Patch\n"}))
+	if !strings.Contains(fp.Diff, "@@ -19988,7 +19988,7 @@") || !strings.Contains(fp.Diff, "-line 19991\n+changed\n") || fp.Added != 2 || fp.Removed != 2 {
+		t.Fatalf("big file: +%d -%d\n%s", fp.Added, fp.Removed, fp.Diff)
 	}
 }
 

@@ -93,6 +93,10 @@ export async function closeRequestNotifications(id) {
     if (!('serviceWorker' in navigator) || !id) return;
     const reg = await Promise.race([registration(), new Promise((r) => setTimeout(() => r(null), 1500))]);
     if (!reg || !reg.getNotifications) return;
+    // The worker closes them in its own turn: reading the list from here
+    // while it is showing a new request makes Chrome forget that request's
+    // notification.
+    if (reg.active) { reg.active.postMessage({ type: 'close-request', id }); return; }
     for (const n of await reg.getNotifications()) {
       if (n.tag === 'req-' + id || n.tag === id || (n.data && n.data.request_id === id)) n.close();
     }

@@ -109,6 +109,10 @@ func TestDeviceAPIOverDemoCore(t *testing.T) {
 	if w.Code != 200 || task.Status != api.TaskRunning {
 		t.Fatalf("start task: %d %s", w.Code, w.Body)
 	}
+	// A signature names one task: a prefix of its id is refused.
+	if w := e.do("POST", "/api/tasks/"+task.ID[:4]+"/finish", e.signAction(k, ActionTask, task.ID[:4], api.TaskFinish{Action: "discard"}), o); w.Code != 404 {
+		t.Fatalf("discard by prefix: %d %s", w.Code, w.Body)
+	}
 	if w := e.do("POST", "/api/tasks/"+task.ID+"/finish", e.signAction(k, ActionTask, task.ID, api.TaskFinish{Action: "discard"}), o); w.Code != 200 || !strings.Contains(w.Body.String(), `"abandoned"`) {
 		t.Fatalf("discard: %d %s", w.Code, w.Body)
 	}

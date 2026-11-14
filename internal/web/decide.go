@@ -30,7 +30,8 @@ const (
 //	pilothouse-decide:v1\n{id}\n{behavior}\n{scope}\n{ts}\n{nonce}
 //
 // ts is Unix milliseconds (JavaScript Date.now()); scope is "once" or
-// "session" (empty is normalized to "once" before signing).
+// "session" (empty is normalized to "once" before signing). There is no
+// message in it, so a v1 decision carries none (the signed /respond does).
 func CanonicalDecision(id string, b api.Behavior, sc api.Scope, ts int64, nonce string) string {
 	if sc == "" {
 		sc = api.ScopeOnce
@@ -81,8 +82,10 @@ func (s *Server) handleDecide(w http.ResponseWriter, r *http.Request) {
 	case b.Scope == api.ScopeSession && b.Behavior != api.BehaviorAllow:
 		writeErr(w, http.StatusBadRequest, "bad_request", "only allow can apply to the whole session")
 		return
-	case len(b.Message) > maxMessage:
-		writeErr(w, http.StatusBadRequest, "bad_request", "message is too long")
+	case strings.TrimSpace(b.Message) != "":
+		// The v1 signature does not cover a message, and a message is
+		// handed to the agent as the person's words.
+		writeErr(w, http.StatusBadRequest, "bad_request", "a message must be signed: send it through /respond")
 		return
 	case !nonceRE.MatchString(b.Nonce):
 		writeErr(w, http.StatusBadRequest, "bad_request", "nonce must be 16-64 base64url characters")
@@ -91,12 +94,14 @@ func (s *Server) handleDecide(w http.ResponseWriter, r *http.Request) {
 	if !s.verifyDeviceSig(w, r, d, CanonicalDecision(id, b.Behavior, b.Scope, b.TS, b.Nonce), b.Sig, b.TS, b.Nonce) {
 		return
 	}
+	if !s.wholeRequest(w, r, id) {
+		return
+	}
 	now := s.now()
 	req, err := s.d.Core.Decide(r.Context(), api.Decision{
 		RequestID: id,
 		Behavior:  b.Behavior,
 		Scope:     b.Scope,
-		Message:   strings.TrimSpace(b.Message),
 		By:        "device:" + d.ID,
 		At:        now.UTC(),
 	})
@@ -108,20 +113,21 @@ func (s *Server) handleDecide(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, req)
 }
 
-// ActionURL is a signed one-time URL that answers a request with one POST
-// (used by ntfy action buttons). Empty if no public URL is configured.
+// DenyURL is a one-time URL that refuses a request with one POST (the Deny
+// button on an ntfy notification). Empty if no public URL is configured.
 // The token is 32 random bytes, stored hashed, valid until the request
-// expires, and spent together with its sibling tokens on first use.
-func (s *Server) ActionURL(requestID string, b api.Behavior) string {
+// expires. There is no such link for allowing: whoever holds the URL can use
+// it, and an approval is signed by a paired device.
+func (s *Server) DenyURL(requestID string) string {
 	pub := s.PublicURL()
-	if pub == "" || requestID == "" || (b != api.BehaviorAllow && b != api.BehaviorDeny) {
+	if pub == "" || requestID == "" {
 		return ""
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	req, err := s.d.Core.Request(ctx, requestID)
 	if err != nil {
-		s.log.Warn("action url: load request", "request", requestID, "err", err)
+		s.log.Warn("deny url: load request", "request", requestID, "err", err)
 		return ""
 	}
 	exp := req.ExpiresAt
@@ -130,15 +136,16 @@ func (s *Server) ActionURL(requestID string, b api.Behavior) string {
 	}
 	tok := randomToken(32)
 	if _, err := s.d.DB.ExecContext(ctx, `INSERT INTO web_action_tokens (token_hash, request_id, behavior, expires_at) VALUES (?, ?, ?, ?)`,
-		hashSecret(tok), requestID, string(b), ms(exp)); err != nil {
-		s.log.Warn("action url: store token", "err", err)
+		hashSecret(tok), requestID, string(api.BehaviorDeny), ms(exp)); err != nil {
+		s.log.Warn("deny url: store token", "err", err)
 		return ""
 	}
 	return pub + "/api/actions/" + tok
 }
 
-// handleAction answers a request from an ntfy action button. The token is
-// the credential (a capability URL); there is no cookie or Origin.
+// handleAction refuses a request from an ntfy Deny button. The token is the
+// credential (a capability URL); there is no cookie or Origin, so it can
+// only deny. A token stored as "allow" by an older version is never spent.
 func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	tok := r.PathValue("token")
 	if len(tok) < 40 || len(tok) > 64 {
@@ -152,10 +159,10 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
-	var reqID, behavior string
+	var reqID string
 	err = tx.QueryRowContext(r.Context(),
-		`UPDATE web_action_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ? RETURNING request_id, behavior`,
-		now, hashSecret(tok), now).Scan(&reqID, &behavior)
+		`UPDATE web_action_tokens SET used_at = ? WHERE token_hash = ? AND behavior = ? AND used_at IS NULL AND expires_at > ? RETURNING request_id`,
+		now, hashSecret(tok), string(api.BehaviorDeny), now).Scan(&reqID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusGone, "invalid_token", "this action was already used or has expired")
 		return
@@ -174,7 +181,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	}
 	req, err := s.d.Core.Decide(r.Context(), api.Decision{
 		RequestID: reqID,
-		Behavior:  api.Behavior(behavior),
+		Behavior:  api.BehaviorDeny,
 		Scope:     api.ScopeOnce,
 		By:        "ntfy",
 		At:        s.now().UTC(),
@@ -183,6 +190,6 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		s.writeCoreErr(w, err)
 		return
 	}
-	s.log.Info("request decided", "request", reqID, "behavior", behavior, "by", "ntfy")
+	s.log.Info("request decided", "request", reqID, "behavior", api.BehaviorDeny, "by", "ntfy")
 	writeJSON(w, http.StatusOK, req)
 }
