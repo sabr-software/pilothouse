@@ -17,7 +17,11 @@ On the phone, a session's page shows a reply box when the session can take
 replies (`caps.reply` in the API). How a reply arrives depends on how the
 agent was started. **For Claude Code, start it with `pilothouse run claude`**:
 replies are then typed into its terminal like your own keystrokes, so Claude
-never holds them.
+never holds them. A reply that reaches a plain `claude` session through its
+messaging socket is, to Claude, a message from another session: even once
+allowed, it can't stand in for the person when Claude's permission settings
+blocked an action (a commit, a push), because Claude can't tell who sent it.
+A typed reply is the person's own input.
 
 | Session | How the reply arrives | Interrupt |
 |---|---|---|

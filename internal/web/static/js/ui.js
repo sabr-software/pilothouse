@@ -283,9 +283,15 @@ export function refreshChrome() {
   renderAttention();
   const showBanner = store.loaded && store.conn !== 'live';
   el.banner.classList.toggle('show', showBanner);
-  fill(el.banner,
-    icon(store.conn === 'offline' ? 'wifiOff' : 'hourglass', 'sm'),
-    store.conn === 'offline' ? `Can’t reach ${store.machine || 'your computer'} — retrying` : 'Reconnecting…');
+  // Hidden, the banner is only faded out: keep it out of the accessibility
+  // tree and don't rewrite it, or a screen reader reads "Reconnecting…"
+  // while connected and the live region re-announces it on every render.
+  el.banner.setAttribute('aria-hidden', showBanner ? 'false' : 'true');
+  if (showBanner) {
+    fill(el.banner,
+      icon(store.conn === 'offline' ? 'wifiOff' : 'hourglass', 'sm'),
+      store.conn === 'offline' ? `Can’t reach ${store.machine || 'your computer'} — retrying` : 'Reconnecting…');
+  }
   let n = 0;
   for (const r of store.requests.values()) if (r.status === 'open') n++;
   for (const b of [el.badge, el.navBadge]) {

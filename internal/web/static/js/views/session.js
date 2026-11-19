@@ -470,7 +470,7 @@ export function sessionView(id) {
   const replyText = h('textarea', {
     // data-shortcut: the `r` key (palette.js) focuses this box.
     class: 'input reply-input', id: 'reply-text', name: 'message', 'data-shortcut': 'reply', rows: 1, maxlength: 16384, autocomplete: 'off',
-    'aria-describedby': 'reply-note', enterkeyhint: 'send',
+    'aria-describedby': 'reply-note', enterkeyhint: 'enter', // Enter adds a line; the Send button (or ⌘/Ctrl+Enter) sends
     // Not a login: keep password managers from offering to fill it.
     'data-1p-ignore': '', 'data-lpignore': 'true', 'data-bwignore': '', 'data-form-type': 'other',
   });

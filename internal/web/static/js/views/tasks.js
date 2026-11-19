@@ -271,9 +271,9 @@ export function newTaskView() {
   });
 
   add(root,
-    h('div', { class: 'page-head' },
+    h('div', { class: 'page-head' }, h('div', null,
       h('h1', { class: 'page-title' }, 'New task'),
-      h('p', { class: 'page-sub' }, 'An agent works on it in its own worktree. You review the diff before anything is pushed.')),
+      h('p', { class: 'page-sub' }, 'An agent works on it in its own worktree. You review the diff before anything is pushed.'))),
     form);
   renderRepos();
   api('GET', '/api/repos').then((rs) => {

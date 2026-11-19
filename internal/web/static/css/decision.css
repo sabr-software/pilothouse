@@ -124,8 +124,11 @@
   border-top: 1px solid var(--border-strong);
 }
 .dec-bar .actions { margin-top: 0; }
-.dec-bar .actions.dec-main, .dec-bar .actions.two { grid-template-columns: 1fr 1.55fr; gap: 10px; }
+.dec-bar .actions.dec-main, .dec-bar .actions.two { grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr); gap: 10px; }
 .dec-bar .actions .btn { grid-column: auto; min-height: 52px; font-size: 17px; border-radius: 14px; }
+/* On a 320 px screen "Request changes" and "Approve plan" don't fit side by
+   side: let the labels wrap instead of pushing the page wider. */
+@media (max-width: 359px) { .dec-bar .actions .btn { white-space: normal; padding: 0 8px; line-height: 1.15; text-align: center; } }
 .btn.outline { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--border-strong); }
 .btn.outline:hover:not(:disabled) { background: var(--surface-2); }
 .btn.outline.deny { color: var(--deny-text); }

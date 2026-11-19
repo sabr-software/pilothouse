@@ -1,6 +1,6 @@
 import { h, icon, agoLong, fill, add } from '../dom.js';
 import { store, api } from '../api.js';
-import { toast, refreshChrome, link, setTheme, theme, isWide } from '../ui.js';
+import { toast, confirmSheet, refreshChrome, link, setTheme, theme, isWide } from '../ui.js';
 import { pushStatus, enablePush, disablePush } from '../push.js';
 import { openHelp } from '../palette.js';
 import { section } from './rows.js';
@@ -229,7 +229,8 @@ export function settingsView() {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const name = input.value.trim();
-      if (!name || name === store.me.device.name) return;
+      if (!name) { toast('Give this device a name', 'bad'); input.focus(); return; }
+      if (name === store.me.device.name) return;
       save.disabled = true;
       try {
         store.me.device = await api('PATCH', '/api/device', { name });
@@ -306,7 +307,8 @@ export function settingsView() {
   }
 
   async function signOut() {
-    if (!confirm('Sign out this device? It will stop receiving requests.')) return;
+    const ok = await confirmSheet({ title: 'Sign out this device?', text: 'It stops receiving requests. Pair it again with pilothouse pair.', confirm: 'Sign out', danger: true });
+    if (!ok) return;
     try {
       await disablePush().catch(() => {});
       await api('POST', '/api/logout');
